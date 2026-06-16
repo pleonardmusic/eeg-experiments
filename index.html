@@ -263,7 +263,7 @@
 
 <script>
   let ws = null;
-  const TGC_URL = 'ws://localhost:13854';
+  const TGC_URL = 'ws://localhost:8765';
   const MAX_LOG_LINES = 30;
   let logLines = [];
 
@@ -280,11 +280,13 @@
     ws = new WebSocket(TGC_URL);
 
     ws.onopen = () => {
+      appendLog('[OPEN] WebSocket connected to TGC');
       setStatus('Connected', 'connected');
       document.getElementById('btn-connect').disabled = true;
       document.getElementById('btn-disconnect').disabled = false;
-      // Request JSON format, no raw output yet
-      ws.send(JSON.stringify({ enableRawOutput: false, format: 'Json' }));
+      const config = JSON.stringify({ enableRawOutput: false, format: 'Json' });
+      appendLog('[SEND] ' + config);
+      ws.send(config);
     };
 
     ws.onmessage = (event) => {
@@ -297,12 +299,15 @@
       }
     };
 
-    ws.onerror = () => {
+    ws.onerror = (e) => {
+      appendLog('[ERROR] WebSocket error — see browser console for details');
       setStatus('Error — is ThinkGearConnector running?', 'error');
     };
 
-    ws.onclose = () => {
-      setStatus('Disconnected', 'disconnected');
+    ws.onclose = (e) => {
+      const reason = e.reason || '(no reason given)';
+      appendLog(`[CLOSE] code=${e.code} reason="${reason}" wasClean=${e.wasClean}`);
+      setStatus(`Disconnected (code ${e.code})`, 'disconnected');
       document.getElementById('btn-connect').disabled = false;
       document.getElementById('btn-disconnect').disabled = true;
       ws = null;

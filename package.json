@@ -1,0 +1,26 @@
+{
+  "name": "eeg-experiments",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pleonardmusic/eeg-experiments.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/pleonardmusic/eeg-experiments/issues"
+  },
+  "homepage": "https://github.com/pleonardmusic/eeg-experiments#readme",
+  "dependencies": {
+    "serialport": "^13.0.0",
+    "ws": "^8.21.0"
+  }
+}
