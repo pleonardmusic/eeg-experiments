@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EEG Monitor — MindWave MVP</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0d0d;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      padding: 32px;
+      min-height: 100vh;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      letter-spacing: 0.1em;
+      color: #7ef7a0;
+      margin-bottom: 24px;
+    }
+
+    #status-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    button {
+      background: #1a1a1a;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      padding: 8px 20px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: border-color 0.2s;
+    }
+    button:hover { border-color: #7ef7a0; }
+    button:disabled { opacity: 0.4; cursor: default; }
+
+    #ws-status {
+      font-size: 0.85rem;
+      padding: 4px 12px;
+      border-radius: 12px;
+      background: #1a1a1a;
+    }
+    #ws-status.connected    { color: #7ef7a0; border: 1px solid #7ef7a0; }
+    #ws-status.disconnected { color: #888;    border: 1px solid #444; }
+    #ws-status.error        { color: #f77e7e; border: 1px solid #f77e7e; }
+
+    .section {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .section h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #666;
+      margin-bottom: 16px;
+    }
+
+    /* Signal quality */
+    #signal-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    #signal-label {
+      font-size: 1.6rem;
+      font-weight: bold;
+      min-width: 3ch;
+    }
+    #signal-label.good    { color: #7ef7a0; }
+    #signal-label.mid     { color: #f7d07e; }
+    #signal-label.bad     { color: #f77e7e; }
+
+    #signal-desc { font-size: 0.85rem; color: #888; }
+
+    /* eSense */
+    .esense-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .esense-item { }
+    .esense-name {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #888;
+      margin-bottom: 6px;
+    }
+    .esense-value {
+      font-size: 2.4rem;
+      font-weight: bold;
+      color: #a0cfff;
+    }
+
+    .bar-track {
+      height: 6px;
+      background: #2a2a2a;
+      border-radius: 3px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: #a0cfff;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    /* Band powers */
+    .band-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .band-item {
+      background: #0d0d0d;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 12px;
+    }
+
+    .band-name {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #888;
+      margin-bottom: 4px;
+    }
+
+    .band-hz {
+      font-size: 0.65rem;
+      color: #555;
+      margin-bottom: 8px;
+    }
+
+    .band-value {
+      font-size: 1.1rem;
+      color: #c8a0ff;
+    }
+
+    .band-item.gamma { border-color: #5a3a7a; }
+    .band-item.gamma .band-value { color: #e0a0ff; }
+
+    /* Raw log */
+    #raw-log {
+      font-size: 0.72rem;
+      color: #555;
+      height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .placeholder { color: #3a3a3a; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+
+<h1>EEG Monitor — MindWave MVP</h1>
+
+<div id="status-bar">
+  <button id="btn-connect" onclick="connect()">Connect to TGC</button>
+  <button id="btn-disconnect" onclick="disconnect()" disabled>Disconnect</button>
+  <span id="ws-status" class="disconnected">Disconnected</span>
+</div>
+
+<!-- Signal quality -->
+<div class="section">
+  <h2>Signal Quality</h2>
+  <div id="signal-row">
+    <span id="signal-label" class="bad">—</span>
+    <span id="signal-desc" class="placeholder">No data yet</span>
+  </div>
+</div>
+
+<!-- eSense -->
+<div class="section">
+  <h2>eSense</h2>
+  <div class="esense-grid">
+    <div class="esense-item">
+      <div class="esense-name">Attention</div>
+      <div class="esense-value" id="val-attention">—</div>
+      <div class="bar-track"><div class="bar-fill" id="bar-attention"></div></div>
+    </div>
+    <div class="esense-item">
+      <div class="esense-name">Meditation</div>
+      <div class="esense-value" id="val-meditation">—</div>
+      <div class="bar-track"><div class="bar-fill" id="bar-meditation"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Band powers -->
+<div class="section">
+  <h2>EEG Band Powers</h2>
+  <div class="band-grid">
+    <div class="band-item" id="band-delta">
+      <div class="band-name">Delta</div>
+      <div class="band-hz">0.5 – 2.75 Hz</div>
+      <div class="band-value" id="val-delta">—</div>
+    </div>
+    <div class="band-item" id="band-theta">
+      <div class="band-name">Theta</div>
+      <div class="band-hz">3.5 – 6.75 Hz</div>
+      <div class="band-value" id="val-theta">—</div>
+    </div>
+    <div class="band-item" id="band-lowAlpha">
+      <div class="band-name">Low Alpha</div>
+      <div class="band-hz">7.5 – 9.25 Hz</div>
+      <div class="band-value" id="val-lowAlpha">—</div>
+    </div>
+    <div class="band-item" id="band-highAlpha">
+      <div class="band-name">High Alpha</div>
+      <div class="band-hz">10 – 11.75 Hz</div>
+      <div class="band-value" id="val-highAlpha">—</div>
+    </div>
+    <div class="band-item" id="band-lowBeta">
+      <div class="band-name">Low Beta</div>
+      <div class="band-hz">13 – 16.75 Hz</div>
+      <div class="band-value" id="val-lowBeta">—</div>
+    </div>
+    <div class="band-item" id="band-highBeta">
+      <div class="band-name">High Beta</div>
+      <div class="band-hz">18 – 25 Hz</div>
+      <div class="band-value" id="val-highBeta">—</div>
+    </div>
+    <div class="band-item gamma" id="band-lowGamma">
+      <div class="band-name">Low Gamma</div>
+      <div class="band-hz">31 – 39.75 Hz ★</div>
+      <div class="band-value" id="val-lowGamma">—</div>
+    </div>
+    <div class="band-item gamma" id="band-highGamma">
+      <div class="band-name">Mid Gamma</div>
+      <div class="band-hz">41 – 49.75 Hz ★</div>
+      <div class="band-value" id="val-highGamma">—</div>
+    </div>
+  </div>
+</div>
+
+<!-- Raw log -->
+<div class="section">
+  <h2>Raw Packets</h2>
+  <div id="raw-log"><span class="placeholder">Waiting for data…</span></div>
+</div>
+
+<script>
+  let ws = null;
+  const TGC_URL = 'ws://localhost:13854';
+  const MAX_LOG_LINES = 30;
+  let logLines = [];
+
+  function setStatus(text, cls) {
+    const el = document.getElementById('ws-status');
+    el.textContent = text;
+    el.className = cls;
+  }
+
+  function connect() {
+    if (ws) return;
+    setStatus('Connecting…', 'disconnected');
+
+    ws = new WebSocket(TGC_URL);
+
+    ws.onopen = () => {
+      setStatus('Connected', 'connected');
+      document.getElementById('btn-connect').disabled = true;
+      document.getElementById('btn-disconnect').disabled = false;
+      // Request JSON format, no raw output yet
+      ws.send(JSON.stringify({ enableRawOutput: false, format: 'Json' }));
+    };
+
+    ws.onmessage = (event) => {
+      appendLog(event.data);
+      try {
+        const data = JSON.parse(event.data);
+        handlePacket(data);
+      } catch (e) {
+        // TGC sometimes sends non-JSON lines; ignore
+      }
+    };
+
+    ws.onerror = () => {
+      setStatus('Error — is ThinkGearConnector running?', 'error');
+    };
+
+    ws.onclose = () => {
+      setStatus('Disconnected', 'disconnected');
+      document.getElementById('btn-connect').disabled = false;
+      document.getElementById('btn-disconnect').disabled = true;
+      ws = null;
+    };
+  }
+
+  function disconnect() {
+    if (ws) ws.close();
+  }
+
+  function handlePacket(data) {
+    // Signal quality
+    if (data.poorSignalLevel !== undefined) {
+      const level = data.poorSignalLevel;
+      const el = document.getElementById('signal-label');
+      const desc = document.getElementById('signal-desc');
+      el.textContent = level;
+      if (level === 0) {
+        el.className = 'good';
+        desc.textContent = 'Good signal';
+      } else if (level < 100) {
+        el.className = 'mid';
+        desc.textContent = 'Weak signal — adjust headset';
+      } else {
+        el.className = 'bad';
+        desc.textContent = level === 200 ? 'No contact — put headset on' : 'Poor signal';
+      }
+    }
+
+    // eSense
+    if (data.eSense) {
+      setEsense('attention',  data.eSense.attention);
+      setEsense('meditation', data.eSense.meditation);
+    }
+
+    // Band powers
+    if (data.eegPower) {
+      const p = data.eegPower;
+      ['delta','theta','lowAlpha','highAlpha','lowBeta','highBeta','lowGamma','highGamma'].forEach(band => {
+        const el = document.getElementById('val-' + band);
+        if (el && p[band] !== undefined) el.textContent = p[band].toLocaleString();
+      });
+    }
+  }
+
+  function setEsense(name, value) {
+    if (value === undefined) return;
+    document.getElementById('val-' + name).textContent = value;
+    document.getElementById('bar-' + name).style.width = value + '%';
+  }
+
+  function appendLog(text) {
+    logLines.push(text);
+    if (logLines.length > MAX_LOG_LINES) logLines.shift();
+    const el = document.getElementById('raw-log');
+    el.textContent = logLines.join('\n');
+    el.scrollTop = el.scrollHeight;
+  }
+</script>
+
+</body>
+</html>
