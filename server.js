@@ -5,7 +5,8 @@ const path = require('path');
 const PORT = 8080;
 
 const server = http.createServer((req, res) => {
-  const file = path.join(__dirname, 'index.html');
+  const reqPath = req.url === '/' ? '/index.html' : req.url;
+  const file = path.join(__dirname, reqPath);
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
     res.writeHead(200, {

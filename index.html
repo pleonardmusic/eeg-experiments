@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EEG Monitor — MindWave MVP</title>
+  <title>EEG Monitor — MindWave</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -19,6 +19,12 @@
       font-size: 1.4rem;
       letter-spacing: 0.1em;
       color: #7ef7a0;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 0.72rem;
+      color: #444;
       margin-bottom: 24px;
     }
 
@@ -27,6 +33,7 @@
       align-items: center;
       gap: 16px;
       margin-bottom: 28px;
+      flex-wrap: wrap;
     }
 
     button {
@@ -53,6 +60,25 @@
     #ws-status.disconnected { color: #888;    border: 1px solid #444; }
     #ws-status.error        { color: #f77e7e; border: 1px solid #f77e7e; }
 
+    .instructions {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      font-size: 0.8rem;
+      color: #666;
+      line-height: 1.7;
+    }
+    .instructions strong { color: #999; }
+    .instructions code {
+      background: #1a1a1a;
+      padding: 1px 6px;
+      border-radius: 3px;
+      color: #7ef7a0;
+      font-size: 0.78rem;
+    }
+
     .section {
       background: #141414;
       border: 1px solid #2a2a2a;
@@ -69,7 +95,6 @@
       margin-bottom: 16px;
     }
 
-    /* Signal quality */
     #signal-row {
       display: flex;
       align-items: center;
@@ -81,20 +106,18 @@
       font-weight: bold;
       min-width: 3ch;
     }
-    #signal-label.good    { color: #7ef7a0; }
-    #signal-label.mid     { color: #f7d07e; }
-    #signal-label.bad     { color: #f77e7e; }
+    #signal-label.good { color: #7ef7a0; }
+    #signal-label.mid  { color: #f7d07e; }
+    #signal-label.bad  { color: #f77e7e; }
 
     #signal-desc { font-size: 0.85rem; color: #888; }
 
-    /* eSense */
     .esense-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
     }
 
-    .esense-item { }
     .esense-name {
       font-size: 0.75rem;
       text-transform: uppercase;
@@ -123,7 +146,58 @@
       width: 0%;
     }
 
-    /* Band powers */
+    .gauge-track {
+      height: 14px;
+      background: #2a2a2a;
+      border-radius: 7px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .gauge-fill {
+      height: 100%;
+      border-radius: 7px;
+      background: #e0a0ff;
+      width: 0%;
+      transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .gauge-fill.above-baseline { background: #7ef7a0; }
+    .gauge-fill.below-baseline { background: #666; }
+
+    .focus-readout {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .focus-value {
+      font-size: 2.6rem;
+      font-weight: bold;
+      color: #e0a0ff;
+    }
+    .focus-baseline {
+      font-size: 1rem;
+      color: #888;
+    }
+    .focus-baseline.above { color: #7ef7a0; }
+    .focus-baseline.below { color: #888; }
+
+    .sparkline {
+      display: block;
+      width: 100%;
+      height: 60px;
+      margin-top: 12px;
+      background: #0d0d0d;
+      border: 1px solid #222;
+      border-radius: 4px;
+    }
+
+    #raw-status {
+      font-size: 0.72rem;
+      color: #555;
+      margin-top: 4px;
+    }
+    #raw-status.live { color: #7ef7a0; }
+
     .band-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -159,7 +233,6 @@
     .band-item.gamma { border-color: #5a3a7a; }
     .band-item.gamma .band-value { color: #e0a0ff; }
 
-    /* Raw log */
     #raw-log {
       font-size: 0.72rem;
       color: #555;
@@ -170,19 +243,86 @@
     }
 
     .placeholder { color: #3a3a3a; font-size: 0.85rem; }
+
+    .record-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    #record-status {
+      font-size: 0.85rem;
+      padding: 4px 12px;
+      border-radius: 12px;
+      background: #1a1a1a;
+      color: #888;
+      border: 1px solid #444;
+    }
+    #record-status.active { color: #f77e7e; border-color: #f77e7e; }
+    .condition-btn.active { border-color: #7ef7a0; color: #7ef7a0; }
+    #custom-condition {
+      background: #1a1a1a;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      padding: 7px 10px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.85rem;
+    }
+    #record-meta { font-size: 0.78rem; color: #666; }
   </style>
 </head>
 <body>
 
-<h1>EEG Monitor — MindWave MVP</h1>
+<h1>EEG Monitor — MindWave</h1>
+<div class="subtitle">Streams from the MindWave Bridge iPhone app · 40 Hz gamma focus</div>
+
+<div class="instructions">
+  <strong>Setup:</strong> Run <code>node bridge-iphone.js</code> in Terminal, open the MindWave Bridge app on your
+  iPhone, enter this Mac's IP, and tap Connect there. Then click <strong>Connect</strong> below.
+  Put the headset on your forehead — Signal Quality should drop below 200.
+  <br><br>
+  <strong>Fallback:</strong> if you'd rather use ThinkGear Connector on the Mac directly, run <code>node bridge.js</code>
+  instead — this page will fall back to it automatically when the iPhone bridge isn't available.
+</div>
 
 <div id="status-bar">
-  <button id="btn-connect" onclick="connect()">Connect to TGC</button>
+  <button id="btn-connect" onclick="connect()">Connect</button>
   <button id="btn-disconnect" onclick="disconnect()" disabled>Disconnect</button>
   <span id="ws-status" class="disconnected">Disconnected</span>
 </div>
 
-<!-- Signal quality -->
+<div class="section">
+  <h2>Session Recording</h2>
+  <div class="record-row">
+    <button id="btn-record" onclick="toggleRecording()">Start Recording</button>
+    <span id="record-status">Not recording</span>
+  </div>
+  <div class="record-row">
+    <span style="color:#888; font-size:0.8rem;">Tag current block:</span>
+    <button class="condition-btn active" onclick="setCondition('Baseline')"
+      title="Quiet rest, no audio playing. Establishes your normal resting 40Hz/gamma levels — every other condition gets compared back to this.">Baseline</button>
+    <button class="condition-btn" onclick="setCondition('Signal A')"
+      title="Your real 40Hz audio signal. Compare against Baseline (effect of audio at all) and against Sham (effect specific to 40Hz, not just any audio).">Signal A</button>
+    <button class="condition-btn" onclick="setCondition('Signal B')"
+      title="A second 40Hz variant — different waveform, volume, or delivery method — to compare against Signal A, Baseline, and Sham.">Signal B</button>
+    <button class="condition-btn" onclick="setCondition('Sham')"
+      title="Control stimulus: same volume/duration/setup as your real signal, but a different frequency (e.g. 25Hz) or noise instead of 40Hz. If readings rise here too, the effect isn't specific to 40Hz — it's a generic audio/attention/electrical confound.">Sham</button>
+    <button class="condition-btn" onclick="setCondition('Hardware Null')"
+      title="Headset not worn. Short the forehead pad and ear clip together (e.g. with a damp paper towel) to fake good contact with no real brain signal, then play audio as normal. If readings still rise, the sensor itself is picking up interference — not your brain.">Hardware Null</button>
+    <button class="condition-btn" onclick="setCondition('Mechanical Control')"
+      title="Forehead pad strapped to your bicep (or other non-head skin), ear clip on a finger. Real skin contact that can physically vibrate from sound, but nowhere near your scalp — can't be a real cortical signal. If readings still rise here, it's a mechanical/microphonic vibration artifact, not your brain.">Mechanical Control</button>
+    <input id="custom-condition" type="text" placeholder="custom label…">
+    <button onclick="setCustomCondition()">Set</button>
+  </div>
+  <div id="record-meta">No samples logged yet.</div>
+  <div class="record-row">
+    <button id="btn-export" onclick="exportCSV()" disabled>Export CSV</button>
+    <button id="btn-clear-session" onclick="clearSession()" disabled>Clear Session</button>
+  </div>
+</div>
+
 <div class="section">
   <h2>Signal Quality</h2>
   <div id="signal-row">
@@ -191,7 +331,6 @@
   </div>
 </div>
 
-<!-- eSense -->
 <div class="section">
   <h2>eSense</h2>
   <div class="esense-grid">
@@ -208,46 +347,86 @@
   </div>
 </div>
 
-<!-- Band powers -->
+<div class="section">
+  <h2>40 Hz Focus</h2>
+  <div id="raw-status">Raw EEG: waiting for samples…</div>
+  <div class="focus-readout">
+    <span class="focus-value" id="val-40hz">—</span>
+    <span class="focus-baseline" id="baseline-40hz"></span>
+    <button id="btn-calibrate" onclick="startCalibration()">Calibrate Baseline</button>
+  </div>
+  <div class="gauge-track"><div class="gauge-fill" id="gauge-40hz"></div></div>
+  <canvas class="sparkline" id="spark-40hz" width="600" height="60"></canvas>
+</div>
+
+<div class="section">
+  <h2>Custom Frequency Tracker</h2>
+  <div class="record-row">
+    <span style="color:#888; font-size:0.8rem;">Track power at:</span>
+    <input id="custom-freq-input" type="number" min="1" max="200" step="1" placeholder="e.g. 25"
+      style="width:80px; background:#1a1a1a; border:1px solid #444; color:#e0e0e0; padding:6px 10px; border-radius:4px; font-family:inherit; font-size:0.85rem;">
+    <span style="color:#888; font-size:0.8rem;">Hz</span>
+    <button onclick="applyCustomFreq()">Apply</button>
+    <button onclick="clearCustomFreq()">Clear</button>
+  </div>
+  <div id="custom-freq-label" class="placeholder">No frequency set — enter one above to start tracking (e.g. for a sham at a different rate).</div>
+  <div class="focus-readout">
+    <span class="focus-value" id="val-custom">—</span>
+    <span class="focus-baseline" id="baseline-custom"></span>
+  </div>
+  <div class="gauge-track"><div class="gauge-fill" id="gauge-custom"></div></div>
+  <canvas class="sparkline" id="spark-custom" width="600" height="60"></canvas>
+</div>
+
+<div class="section">
+  <h2>Gamma % of Total Power</h2>
+  <div class="focus-readout">
+    <span class="focus-value" id="val-gammaPct">—</span>
+    <span class="focus-baseline" id="baseline-gammaPct"></span>
+  </div>
+  <div class="gauge-track"><div class="gauge-fill" id="gauge-gammaPct"></div></div>
+  <canvas class="sparkline" id="spark-gammaPct" width="600" height="60"></canvas>
+</div>
+
 <div class="section">
   <h2>EEG Band Powers</h2>
   <div class="band-grid">
-    <div class="band-item" id="band-delta">
+    <div class="band-item">
       <div class="band-name">Delta</div>
       <div class="band-hz">0.5 – 2.75 Hz</div>
       <div class="band-value" id="val-delta">—</div>
     </div>
-    <div class="band-item" id="band-theta">
+    <div class="band-item">
       <div class="band-name">Theta</div>
       <div class="band-hz">3.5 – 6.75 Hz</div>
       <div class="band-value" id="val-theta">—</div>
     </div>
-    <div class="band-item" id="band-lowAlpha">
+    <div class="band-item">
       <div class="band-name">Low Alpha</div>
       <div class="band-hz">7.5 – 9.25 Hz</div>
       <div class="band-value" id="val-lowAlpha">—</div>
     </div>
-    <div class="band-item" id="band-highAlpha">
+    <div class="band-item">
       <div class="band-name">High Alpha</div>
       <div class="band-hz">10 – 11.75 Hz</div>
       <div class="band-value" id="val-highAlpha">—</div>
     </div>
-    <div class="band-item" id="band-lowBeta">
+    <div class="band-item">
       <div class="band-name">Low Beta</div>
       <div class="band-hz">13 – 16.75 Hz</div>
       <div class="band-value" id="val-lowBeta">—</div>
     </div>
-    <div class="band-item" id="band-highBeta">
+    <div class="band-item">
       <div class="band-name">High Beta</div>
       <div class="band-hz">18 – 25 Hz</div>
       <div class="band-value" id="val-highBeta">—</div>
     </div>
-    <div class="band-item gamma" id="band-lowGamma">
+    <div class="band-item gamma">
       <div class="band-name">Low Gamma</div>
       <div class="band-hz">31 – 39.75 Hz ★</div>
       <div class="band-value" id="val-lowGamma">—</div>
     </div>
-    <div class="band-item gamma" id="band-highGamma">
+    <div class="band-item gamma">
       <div class="band-name">Mid Gamma</div>
       <div class="band-hz">41 – 49.75 Hz ★</div>
       <div class="band-value" id="val-highGamma">—</div>
@@ -255,17 +434,324 @@
   </div>
 </div>
 
-<!-- Raw log -->
 <div class="section">
   <h2>Raw Packets</h2>
   <div id="raw-log"><span class="placeholder">Waiting for data…</span></div>
 </div>
 
 <script>
+  // 8765 is bridge-iphone.js (or bridge.js) re-broadcasting to the browser.
+  // 13854 is TGC's native WebSocket, kept as a fallback for the Mac-BT route.
+  const PORTS = [8765, 13854];
+  let portIndex = 0;
   let ws = null;
-  const TGC_URL = 'ws://localhost:8765';
-  const MAX_LOG_LINES = 30;
-  let logLines = [];
+  const logLines = [];
+  let rawLogCounter = 0;
+
+  // --- 40Hz Goertzel detector ---
+  const RAW_BUFFER_SIZE = 512; // 1s window at TGC's 512Hz raw sample rate
+  const RAW_STEP = 256;        // recompute every 0.5s (50% overlap)
+  const SAMPLE_RATE = 512;
+  const TARGET_FREQ = 40;
+  let rawBuffer = [];
+  let samplesSinceLastCompute = 0;
+  let rawPacketCount = 0;
+  let lastPoorSignal = 200;
+
+  // --- smoothing / gating ---
+  const EMA_ALPHA = 0.2;
+  const SIGNAL_GATE = 50; // poorSignalLevel must be below this to accept new readings
+  let ema40 = null;
+  let emaGamma = null;
+
+  // --- custom frequency tracker (e.g. for sham frequencies) ---
+  let customFreq = null;
+  let emaCustom = null;
+  let sparkCustom = [];
+  const calibCustomUnused = []; // updateMetric requires a calib array; unused for this tracker
+
+  // --- baseline calibration ---
+  let baseline40 = null;
+  let baselineGamma = null;
+  let calibrating = false;
+  let calibSamples40 = [];
+  let calibSamplesGamma = [];
+  let calibTimer = null;
+
+  // --- sparkline history ---
+  const SPARK_MAX_POINTS = 120; // ~60s at one point per 0.5s
+  let spark40 = [];
+  let sparkGamma = [];
+
+  // --- session recording (for A/B/baseline/sham comparisons) ---
+  let recording = false;
+  let currentCondition = 'Baseline';
+  let sessionLog = [];
+  let recordingStartedAt = null;
+  let lastAttention = null;
+  let lastMeditation = null;
+
+  function goertzelPower(samples, targetFreq, sampleRate) {
+    const N = samples.length;
+    const k = Math.round(N * targetFreq / sampleRate);
+    const omega = (2 * Math.PI * k) / N;
+    const cosine = Math.cos(omega);
+    const coeff = 2 * cosine;
+    let q1 = 0, q2 = 0;
+    for (let i = 0; i < N; i++) {
+      const q0 = coeff * q1 - q2 + samples[i];
+      q2 = q1;
+      q1 = q0;
+    }
+    const real = q1 - q2 * cosine;
+    const imag = q2 * Math.sin(omega);
+    return real * real + imag * imag;
+  }
+
+  function handleRawSample(sample) {
+    rawPacketCount++;
+    if (rawPacketCount === 1) {
+      const statusEl = document.getElementById('raw-status');
+      statusEl.textContent = 'Raw EEG: receiving samples (512/s)';
+      statusEl.classList.add('live');
+    }
+    rawBuffer.push(sample);
+    if (rawBuffer.length > RAW_BUFFER_SIZE) rawBuffer.shift();
+    samplesSinceLastCompute++;
+    if (rawBuffer.length === RAW_BUFFER_SIZE && samplesSinceLastCompute >= RAW_STEP) {
+      samplesSinceLastCompute = 0;
+      computeFortyHz();
+      computeCustomFreq();
+    }
+  }
+
+  function computeFortyHz() {
+    const N = rawBuffer.length;
+    const power = goertzelPower(rawBuffer, TARGET_FREQ, SAMPLE_RATE);
+    let totalEnergy = 0;
+    for (let i = 0; i < N; i++) totalEnergy += rawBuffer[i] * rawBuffer[i];
+    if (totalEnergy === 0) return;
+    // Parseval-based normalization: fraction of average signal power concentrated at 40Hz.
+    // For a sinusoid, avg power = 2|X_k|^2/N^2; dividing by avg time-domain power (totalEnergy/N)
+    // gives a bounded, comparable percentage instead of an arbitrary unit.
+    const pct = (200 * power) / (N * totalEnergy);
+    updateMetric('40hz', pct, spark40, calibSamples40, (v) => { ema40 = v; }, () => ema40, baseline40);
+  }
+
+  function computeCustomFreq() {
+    if (!customFreq) return;
+    const N = rawBuffer.length;
+    const power = goertzelPower(rawBuffer, customFreq, SAMPLE_RATE);
+    let totalEnergy = 0;
+    for (let i = 0; i < N; i++) totalEnergy += rawBuffer[i] * rawBuffer[i];
+    if (totalEnergy === 0) return;
+    const pct = (200 * power) / (N * totalEnergy);
+    updateMetric('custom', pct, sparkCustom, calibCustomUnused, (v) => { emaCustom = v; }, () => emaCustom, null);
+  }
+
+  function applyCustomFreq() {
+    const val = parseFloat(document.getElementById('custom-freq-input').value);
+    if (!val || val <= 0) return;
+    customFreq = val;
+    emaCustom = null;
+    sparkCustom = [];
+    const label = document.getElementById('custom-freq-label');
+    label.textContent = `Tracking power at ${val} Hz`;
+    label.className = '';
+  }
+
+  function clearCustomFreq() {
+    customFreq = null;
+    emaCustom = null;
+    sparkCustom = [];
+    const label = document.getElementById('custom-freq-label');
+    label.textContent = 'No frequency set — enter one above to start tracking (e.g. for a sham at a different rate).';
+    label.className = 'placeholder';
+    document.getElementById('val-custom').textContent = '—';
+    document.getElementById('gauge-custom').style.width = '0%';
+  }
+
+  function handleEegPower(p) {
+    const bands = ['delta', 'theta', 'lowAlpha', 'highAlpha', 'lowBeta', 'highBeta', 'lowGamma', 'highGamma'];
+    let total = 0;
+    bands.forEach((b) => { total += (p[b] || 0); });
+    if (total === 0) return;
+    const gammaPct = ((p.lowGamma || 0) + (p.highGamma || 0)) / total * 100;
+    updateMetric('gammaPct', gammaPct, sparkGamma, calibSamplesGamma, (v) => { emaGamma = v; }, () => emaGamma, baselineGamma);
+  }
+
+  function updateMetric(key, rawValue, sparkArr, calibArr, setEma, getEma, baseline) {
+    if (lastPoorSignal >= SIGNAL_GATE) return; // hold last displayed value during poor contact
+    const prev = getEma();
+    const next = prev === null ? rawValue : EMA_ALPHA * rawValue + (1 - EMA_ALPHA) * prev;
+    setEma(next);
+    renderMetric(key, next, baseline);
+    sparkArr.push(next);
+    if (sparkArr.length > SPARK_MAX_POINTS) sparkArr.shift();
+    drawSparkline('spark-' + key, sparkArr);
+    if (calibrating) calibArr.push(next);
+    logSample();
+  }
+
+  // --- session recording ---
+
+  function toggleRecording() {
+    recording = !recording;
+    const btn = document.getElementById('btn-record');
+    const status = document.getElementById('record-status');
+    if (recording) {
+      recordingStartedAt = recordingStartedAt || Date.now();
+      btn.textContent = 'Stop Recording';
+      status.textContent = `● Recording — tagged "${currentCondition}"`;
+      status.classList.add('active');
+    } else {
+      btn.textContent = 'Start Recording';
+      status.textContent = `Paused — ${sessionLog.length} samples logged`;
+      status.classList.remove('active');
+    }
+    updateRecordMeta();
+  }
+
+  function setCondition(label) {
+    currentCondition = label;
+    document.querySelectorAll('.condition-btn').forEach(b => {
+      b.classList.toggle('active', b.textContent === label);
+    });
+    if (recording) {
+      document.getElementById('record-status').textContent = `● Recording — tagged "${currentCondition}"`;
+    }
+  }
+
+  function setCustomCondition() {
+    const input = document.getElementById('custom-condition');
+    const label = input.value.trim();
+    if (!label) return;
+    setCondition(label);
+    document.querySelectorAll('.condition-btn').forEach(b => b.classList.remove('active'));
+  }
+
+  function logSample() {
+    if (!recording) return;
+    const now = Date.now();
+    sessionLog.push({
+      t: now,
+      elapsed: ((now - recordingStartedAt) / 1000).toFixed(1),
+      condition: currentCondition,
+      poorSignal: lastPoorSignal,
+      attention: lastAttention,
+      meditation: lastMeditation,
+      pct40hz: ema40 !== null ? ema40.toFixed(3) : '',
+      pctGamma: emaGamma !== null ? emaGamma.toFixed(3) : '',
+      freqCustom: customFreq || '',
+      pctCustom: emaCustom !== null ? emaCustom.toFixed(3) : ''
+    });
+    updateRecordMeta();
+  }
+
+  function updateRecordMeta() {
+    const meta = document.getElementById('record-meta');
+    meta.textContent = sessionLog.length
+      ? `${sessionLog.length} samples logged so far (current tag: "${currentCondition}")`
+      : 'No samples logged yet.';
+    document.getElementById('btn-export').disabled = sessionLog.length === 0;
+    document.getElementById('btn-clear-session').disabled = sessionLog.length === 0;
+  }
+
+  function exportCSV() {
+    const header = 'timestamp_ms,elapsed_s,condition,poor_signal,attention,meditation,pct_40hz,pct_gamma,freq_custom,pct_custom\n';
+    const rows = sessionLog.map(r =>
+      `${r.t},${r.elapsed},"${r.condition}",${r.poorSignal},${r.attention ?? ''},${r.meditation ?? ''},${r.pct40hz},${r.pctGamma},${r.freqCustom},${r.pctCustom}`
+    ).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `eeg-session-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function clearSession() {
+    if (recording) toggleRecording();
+    sessionLog = [];
+    recordingStartedAt = null;
+    updateRecordMeta();
+    document.getElementById('record-status').textContent = 'Not recording';
+  }
+
+  function renderMetric(key, value, baseline) {
+    const valEl = document.getElementById('val-' + key);
+    const baseEl = document.getElementById('baseline-' + key);
+    const gaugeEl = document.getElementById('gauge-' + key);
+    valEl.textContent = value.toFixed(2) + '%';
+
+    if (baseline) {
+      const relative = (value - baseline) / baseline * 100;
+      baseEl.textContent = (relative >= 0 ? '+' : '') + relative.toFixed(0) + '% vs baseline';
+      baseEl.className = 'focus-baseline ' + (relative >= 0 ? 'above' : 'below');
+      gaugeEl.style.width = Math.max(0, Math.min(100, 50 + relative / 2)) + '%';
+      gaugeEl.className = 'gauge-fill ' + (relative >= 0 ? 'above-baseline' : 'below-baseline');
+    } else {
+      baseEl.textContent = '';
+      baseEl.className = 'focus-baseline';
+      gaugeEl.style.width = Math.max(0, Math.min(100, value / 15 * 100)) + '%';
+      gaugeEl.className = 'gauge-fill';
+    }
+  }
+
+  function drawSparkline(canvasId, arr) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    if (arr.length < 2) return;
+    const max = Math.max(...arr);
+    const min = Math.min(...arr);
+    const range = (max - min) || 1;
+    ctx.strokeStyle = '#e0a0ff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    arr.forEach((v, i) => {
+      const x = (i / (SPARK_MAX_POINTS - 1)) * w;
+      const y = h - ((v - min) / range) * h;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  function startCalibration() {
+    if (calibrating) return;
+    calibrating = true;
+    calibSamples40 = [];
+    calibSamplesGamma = [];
+    const btn = document.getElementById('btn-calibrate');
+    btn.disabled = true;
+    let remaining = 10;
+    btn.textContent = `Calibrating… ${remaining}s`;
+    calibTimer = setInterval(() => {
+      remaining--;
+      btn.textContent = `Calibrating… ${remaining}s`;
+      if (remaining <= 0) {
+        clearInterval(calibTimer);
+        finishCalibration();
+      }
+    }, 1000);
+  }
+
+  function finishCalibration() {
+    calibrating = false;
+    const btn = document.getElementById('btn-calibrate');
+    btn.disabled = false;
+    btn.textContent = 'Calibrate Baseline';
+    if (calibSamples40.length) {
+      baseline40 = calibSamples40.reduce((a, b) => a + b, 0) / calibSamples40.length;
+    }
+    if (calibSamplesGamma.length) {
+      baselineGamma = calibSamplesGamma.reduce((a, b) => a + b, 0) / calibSamplesGamma.length;
+    }
+  }
 
   function setStatus(text, cls) {
     const el = document.getElementById('ws-status');
@@ -273,83 +759,125 @@
     el.className = cls;
   }
 
+  function appendLog(text) {
+    logLines.push(text);
+    if (logLines.length > 40) logLines.shift();
+    const el = document.getElementById('raw-log');
+    el.textContent = logLines.join('\n');
+    el.scrollTop = el.scrollHeight;
+  }
+
   function connect() {
     if (ws) return;
-    setStatus('Connecting…', 'disconnected');
+    tryPort(0);
+  }
 
-    ws = new WebSocket(TGC_URL);
+  function tryPort(idx) {
+    portIndex = idx;
+    const port = PORTS[idx];
+    setStatus(`Connecting on port ${port}…`, 'disconnected');
+    appendLog(`[CONN] Trying ws://localhost:${port}`);
+
+    ws = new WebSocket(`ws://localhost:${port}`);
+
+    // If TGC doesn't respond quickly, try next port
+    const timeout = setTimeout(() => {
+      if (ws && ws.readyState !== WebSocket.OPEN) {
+        appendLog(`[TIMEOUT] Port ${port} — no response`);
+        ws.close();
+      }
+    }, 3000);
 
     ws.onopen = () => {
-      appendLog('[OPEN] WebSocket connected to TGC');
-      setStatus('Connected', 'connected');
+      clearTimeout(timeout);
+      appendLog(`[OPEN] Connected on port ${port}`);
+      setStatus(`Connected (port ${port})`, 'connected');
       document.getElementById('btn-connect').disabled = true;
       document.getElementById('btn-disconnect').disabled = false;
-      const config = JSON.stringify({ enableRawOutput: false, format: 'Json' });
-      appendLog('[SEND] ' + config);
-      ws.send(config);
+      ws.send(JSON.stringify({ enableRawOutput: true, format: 'Json' }));
     };
 
     ws.onmessage = (event) => {
-      appendLog(event.data);
+      let data;
       try {
-        const data = JSON.parse(event.data);
-        handlePacket(data);
-      } catch (e) {
-        // TGC sometimes sends non-JSON lines; ignore
+        data = JSON.parse(event.data);
+      } catch (_) {
+        appendLog(event.data);
+        return;
       }
+      // Raw samples arrive at ~512Hz — logging every one would flood the panel,
+      // so only a sampled fraction get written (just enough to confirm raw mode is live).
+      const isRawOnly = data.rawEeg !== undefined && data.poorSignalLevel === undefined && !data.eSense && !data.eegPower;
+      rawLogCounter++;
+      if (!isRawOnly || rawLogCounter % 64 === 0) appendLog(event.data);
+      handlePacket(data);
     };
 
-    ws.onerror = (e) => {
-      appendLog('[ERROR] WebSocket error — see browser console for details');
-      setStatus('Error — is ThinkGearConnector running?', 'error');
+    ws.onerror = () => {
+      clearTimeout(timeout);
+      // Silently fall through — onclose will fire next
     };
 
     ws.onclose = (e) => {
-      const reason = e.reason || '(no reason given)';
-      appendLog(`[CLOSE] code=${e.code} reason="${reason}" wasClean=${e.wasClean}`);
-      setStatus(`Disconnected (code ${e.code})`, 'disconnected');
-      document.getElementById('btn-connect').disabled = false;
-      document.getElementById('btn-disconnect').disabled = true;
+      clearTimeout(timeout);
       ws = null;
+
+      const nextIdx = idx + 1;
+      if (nextIdx < PORTS.length && e.code !== 1000) {
+        // Try next port automatically
+        appendLog(`[RETRY] Port ${PORTS[idx]} failed — trying port ${PORTS[nextIdx]}`);
+        setTimeout(() => tryPort(nextIdx), 500);
+      } else {
+        setStatus('Disconnected', 'disconnected');
+        document.getElementById('btn-connect').disabled = false;
+        document.getElementById('btn-disconnect').disabled = true;
+        if (e.code !== 1000) {
+          appendLog('[FAIL] Could not connect. Run node bridge-iphone.js and connect from the iPhone app, or node bridge.js for the TGC fallback.');
+        } else {
+          appendLog('[CLOSE] Disconnected');
+        }
+      }
     };
   }
 
   function disconnect() {
-    if (ws) ws.close();
+    if (ws) {
+      ws.close(1000);
+      ws = null;
+    }
+    setStatus('Disconnected', 'disconnected');
+    document.getElementById('btn-connect').disabled = false;
+    document.getElementById('btn-disconnect').disabled = true;
   }
 
   function handlePacket(data) {
-    // Signal quality
     if (data.poorSignalLevel !== undefined) {
       const level = data.poorSignalLevel;
-      const el = document.getElementById('signal-label');
+      lastPoorSignal = level;
+      const el   = document.getElementById('signal-label');
       const desc = document.getElementById('signal-desc');
       el.textContent = level;
-      if (level === 0) {
-        el.className = 'good';
-        desc.textContent = 'Good signal';
-      } else if (level < 100) {
-        el.className = 'mid';
-        desc.textContent = 'Weak signal — adjust headset';
-      } else {
-        el.className = 'bad';
-        desc.textContent = level === 200 ? 'No contact — put headset on' : 'Poor signal';
-      }
+      if (level === 0)      { el.className = 'good'; desc.textContent = 'Good signal'; }
+      else if (level < 100) { el.className = 'mid';  desc.textContent = 'Weak signal — adjust headset'; }
+      else                  { el.className = 'bad';  desc.textContent = level === 200 ? 'No data — Bluetooth/TGC link broken, not a placement issue (try restarting TGC)' : 'Poor signal'; }
     }
 
-    // eSense
     if (data.eSense) {
       setEsense('attention',  data.eSense.attention);
       setEsense('meditation', data.eSense.meditation);
     }
 
-    // Band powers
     if (data.eegPower) {
       const p = data.eegPower;
       ['delta','theta','lowAlpha','highAlpha','lowBeta','highBeta','lowGamma','highGamma'].forEach(band => {
         const el = document.getElementById('val-' + band);
         if (el && p[band] !== undefined) el.textContent = p[band].toLocaleString();
       });
+      handleEegPower(p);
+    }
+
+    if (data.rawEeg !== undefined) {
+      handleRawSample(data.rawEeg);
     }
   }
 
@@ -357,14 +885,8 @@
     if (value === undefined) return;
     document.getElementById('val-' + name).textContent = value;
     document.getElementById('bar-' + name).style.width = value + '%';
-  }
-
-  function appendLog(text) {
-    logLines.push(text);
-    if (logLines.length > MAX_LOG_LINES) logLines.shift();
-    const el = document.getElementById('raw-log');
-    el.textContent = logLines.join('\n');
-    el.scrollTop = el.scrollHeight;
+    if (name === 'attention') lastAttention = value;
+    if (name === 'meditation') lastMeditation = value;
   }
 </script>
 
