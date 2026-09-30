@@ -48,6 +48,29 @@ for normal use.
 alone will NOT get live data from the iPhone. `EEG Monitor.app` is the real entry
 point now; `start.sh` should be updated or retired next time this is touched.
 
+## v2 recorder (`recorder-v2.html`, added 2026-09-30)
+A lean recorder built for Lara Rangel's (UCSD) analysis method: single-cycle
+(25 ms) averaging of the raw signal, per Johnson, Gallagher, Coulson & Rangel,
+"Network resonance and the auditory steady state response", Sci Rep 14:16799 (2024).
+v1 (`index.html`) is untouched and still works; both share `server.js` and
+`bridge-iphone.js`. Launch v2 with **`EEG Recorder v2.app`** on the Desktop
+(a copy of the v1 launcher that opens `/recorder-v2.html`).
+
+- Plays the single long test track itself (so it knows exactly when each block
+  starts), following an editable block schedule (condition + minutes, saved in
+  the browser). Can start from any block to redo part of a test.
+- Saves each session to `recordings/<session-name>/` (git-ignored), streamed to
+  disk every second via `server.js`'s `/api/v2/*` endpoints so a browser crash
+  loses at most ~1 s: `recording.csv` (sample_index, t_received_ms, raw,
+  poor_signal), `events.csv` (block_start / audio_start / dropout / etc., keyed
+  by sample_index), `session.json` (schedule, measured sample rate, µV scale),
+  `README.txt` (column guide for the analyst).
+- block_start sample indices are computed from the audio_start anchor plus the
+  measured sample rate, so all blocks share one constant (unknown, ~tens of ms)
+  Bluetooth/Wi-Fi latency offset rather than random timer jitter.
+- Verified 2026-09-30 with a simulated 40 Hz + noise stream: folding the saved
+  recording into 25 ms cycles recovered the hidden wave's amplitude (40.6 vs 40).
+
 ## Legacy / abandoned files — do not resume work here without a reason
 - **`bridge.js`** — the old Mac-side bridge: polls ThinkGear Connector (TGC) over TCP
   on port 13854, re-broadcasts to the browser on 8765 (same output port the iPhone

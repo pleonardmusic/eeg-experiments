@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EEG Recorder v2</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 60px;
+    background: #111; color: #ddd;
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #fff; }
+  .sub { color: #888; margin: 0 0 20px; }
+  .section { background: #1b1b1b; border: 1px solid #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #999; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+  .stat .label { color: #888; font-size: 12px; }
+  .stat .value { font-size: 18px; color: #fff; font-variant-numeric: tabular-nums; }
+  .good { color: #7ef7a0 !important; }
+  .warn { color: #f7d47e !important; }
+  .bad  { color: #f77e7e !important; }
+  canvas { width: 100%; height: 90px; background: #0c0c0c; border-radius: 4px; margin-top: 12px; display: block; }
+  button {
+    background: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 6px;
+    padding: 7px 14px; font: inherit; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #383838; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: #1f5f3a; border-color: #2c8a54; }
+  button.primary:hover:not(:disabled) { background: #26704a; }
+  button.danger { background: #6a2424; border-color: #8f3333; }
+  button.small { padding: 2px 8px; font-size: 12px; }
+  input, select {
+    background: #0f0f0f; color: #eee; border: 1px solid #444; border-radius: 4px;
+    padding: 5px 8px; font: inherit;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #262626; }
+  th { color: #888; font-weight: normal; font-size: 12px; }
+  td input.cond { width: 100%; }
+  td input.mins { width: 80px; }
+  tr.current td { background: #1f3326; }
+  .note { color: #888; font-size: 12px; margin-top: 6px; }
+  #event-log {
+    font: 12px/1.5 ui-monospace, Menlo, monospace; color: #aaa;
+    max-height: 220px; overflow-y: auto; background: #0c0c0c; padding: 8px; border-radius: 4px;
+  }
+  .bigstate { font-size: 16px; color: #fff; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>EEG Recorder v2</h1>
+  <p class="sub">Records the headset's raw signal plus a condition timeline while playing your test track. Built for single-cycle (25&nbsp;ms) averaging analysis.</p>
+
+  <div class="section">
+    <h2>1 · Headset</h2>
+    <div class="row">
+      <div class="stat"><div class="label">Bridge</div><div class="value" id="st-bridge">Connecting…</div></div>
+      <div class="stat"><div class="label">Signal quality</div><div class="value" id="st-signal">—</div></div>
+      <div class="stat"><div class="label">Samples / sec (last 10 s)</div><div class="value" id="st-rate">—</div></div>
+    </div>
+    <canvas id="trace" width="1600" height="180"></canvas>
+    <div class="note">Last 2 seconds of raw signal. Signal quality should read "Good" before you start.</div>
+  </div>
+
+  <div class="section">
+    <h2>2 · Test track</h2>
+    <div class="row">
+      <input type="file" id="audio-file" accept="audio/*">
+      <div class="stat"><div class="label">Track length</div><div class="value" id="st-track">—</div></div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Condition</th><th>Minutes</th><th>Starts at</th><th></th></tr></thead>
+      <tbody id="schedule-body"></tbody>
+    </table>
+    <div class="row">
+      <button id="btn-add-row" class="small">+ Add block</button>
+      <div class="note" id="schedule-total"></div>
+    </div>
+    <div class="note">List the blocks in the same order they appear in your track. Include the silences between conditions as their own blocks.</div>
+  </div>
+
+  <div class="section">
+    <h2>3 · Session</h2>
+    <div class="bigstate" id="st-session">Not recording</div>
+    <div class="row">
+      <label>Start from block <select id="start-block"></select></label>
+      <label><input type="checkbox" id="record-only"> Record only (no audio)</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btn-start" class="primary">Start session</button>
+      <button id="btn-stop" class="danger" disabled>Stop</button>
+      <button id="btn-reveal" disabled>Show files in Finder</button>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div class="stat"><div class="label">Elapsed</div><div class="value" id="st-elapsed">—</div></div>
+      <div class="stat"><div class="label">Current block</div><div class="value" id="st-block">—</div></div>
+      <div class="stat"><div class="label">Block time left</div><div class="value" id="st-left">—</div></div>
+      <div class="stat"><div class="label">Samples saved</div><div class="value" id="st-saved">0</div></div>
+      <div class="stat"><div class="label">Dropouts</div><div class="value" id="st-gaps">0</div></div>
+    </div>
+    <audio id="player" preload="auto"></audio>
+  </div>
+
+  <div class="section">
+    <h2>Event log</h2>
+    <div id="event-log"></div>
+  </div>
+</main>
+
+<script>
+  const NOMINAL_RATE = 512;          // MindWave raw sample rate
+  const PREROLL_S = 3;               // record this long before the audio starts
+  const GAP_MS = 250;                // no samples for this long = dropout
+  const FLUSH_MS = 1000;
+  const APP_VERSION = 'recorder-v2 1.0';
+
+  const $ = (id) => document.getElementById(id);
+  const now = () => performance.timeOrigin + performance.now();
+
+  // ---------- schedule ----------
+  const DEFAULT_SCHEDULE = [
+    { condition: 'Silence', minutes: 10 },
+    { condition: 'Gap', minutes: 1 },
+    { condition: 'Original', minutes: 10 },
+    { condition: 'Gap', minutes: 1 },
+    { condition: 'A', minutes: 10 },
+    { condition: 'Gap', minutes: 1 },
+    { condition: 'B', minutes: 10 },
+    { condition: 'Gap', minutes: 1 },
+    { condition: 'A+B', minutes: 10 },
+  ];
+
+  let schedule = loadSchedule();
+
+  function loadSchedule() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('v2-schedule'));
+      if (Array.isArray(saved) && saved.length) return saved;
+    } catch (_) {}
+    return DEFAULT_SCHEDULE.map((b) => ({ ...b }));
+  }
+
+  function saveSchedule() {
+    try { localStorage.setItem('v2-schedule', JSON.stringify(schedule)); } catch (_) {}
+  }
+
+  // Blocks with absolute start/end (seconds into the track).
+  function timeline() {
+    let t = 0;
+    return schedule.map((b, i) => {
+      const dur = Math.max(0, Number(b.minutes) || 0) * 60;
+      const out = { index: i, condition: b.condition.trim() || `Block ${i + 1}`, start_s: t, duration_s: dur, end_s: t + dur };
+      t += dur;
+      return out;
+    });
+  }
+
+  function fmt(s) {
+    if (!isFinite(s)) return '—';
+    s = Math.max(0, Math.round(s));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
+  }
+
+  function renderSchedule() {
+    const body = $('schedule-body');
+    body.innerHTML = '';
+    const tl = timeline();
+    tl.forEach((b, i) => {
+      const tr = document.createElement('tr');
+      tr.id = 'block-row-' + i;
+      tr.innerHTML = `
+        <td>${i + 1}</td>
+        <td><input class="cond" value=""></td>
+        <td><input class="mins" type="number" min="0" step="0.5" value=""></td>
+        <td>${fmt(b.start_s)}</td>
+        <td>
+          <button class="small" data-act="up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="small" data-act="down" ${i === tl.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="small" data-act="del">✕</button>
+        </td>`;
+      const cond = tr.querySelector('.cond'), mins = tr.querySelector('.mins');
+      cond.value = schedule[i].condition;
+      mins.value = schedule[i].minutes;
+      cond.addEventListener('change', () => { schedule[i].condition = cond.value; saveSchedule(); renderSchedule(); });
+      mins.addEventListener('change', () => { schedule[i].minutes = Number(mins.value) || 0; saveSchedule(); renderSchedule(); });
+      tr.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', () => {
+        const act = btn.dataset.act;
+        if (act === 'del') schedule.splice(i, 1);
+        if (act === 'up') [schedule[i - 1], schedule[i]] = [schedule[i], schedule[i - 1]];
+        if (act === 'down') [schedule[i + 1], schedule[i]] = [schedule[i], schedule[i + 1]];
+        saveSchedule(); renderSchedule();
+      }));
+      body.appendChild(tr);
+    });
+
+    const total = tl.length ? tl[tl.length - 1].end_s : 0;
+    const dur = $('player').duration;
+    let msg = `Total: ${fmt(total)}`;
+    if (isFinite(dur)) {
+      const diff = dur - total;
+      if (Math.abs(diff) > 2) msg += ` — ⚠ track is ${fmt(dur)}, ${diff > 0 ? 'longer' : 'shorter'} than the schedule by ${fmt(Math.abs(diff))}`;
+      else msg += ' — matches the track ✓';
+    }
+    $('schedule-total').textContent = msg;
+
+    const sel = $('start-block');
+    const prev = sel.value;
+    sel.innerHTML = tl.map((b) => `<option value="${b.index}">${b.index + 1}. ${b.condition} (${fmt(b.start_s)})</option>`).join('');
+    if (prev && Number(prev) < tl.length) sel.value = prev;
+    setControls();
+  }
+
+  $('btn-add-row').addEventListener('click', () => {
+    schedule.push({ condition: 'New block', minutes: 10 });
+    saveSchedule(); renderSchedule();
+  });
+
+  // ---------- audio ----------
+  const player = $('player');
+  let audioFileName = null;
+
+  $('audio-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    audioFileName = f.name;
+    player.src = URL.createObjectURL(f);
+    $('st-track').textContent = 'Loading…';
+  });
+  player.addEventListener('loadedmetadata', () => {
+    $('st-track').textContent = fmt(player.duration);
+    renderSchedule();
+  });
+
+  // ---------- bridge connection ----------
+  let ws = null;
+  let lastPoorSignal = null;
+  const trace = new Float32Array(1024);
+  let traceHead = 0;
+  const rateWindow = [];   // [time_ms, totalReceived] pairs for the live rate
+  let totalReceived = 0;
+
+  function connect() {
+    ws = new WebSocket('ws://localhost:8765');
+    ws.onopen = () => { setBridge('Connected', 'good'); logEvent('bridge_connected'); };
+    ws.onclose = () => {
+      if (ws) logEvent('bridge_disconnected');
+      ws = null;
+      setBridge('Disconnected — retrying', 'bad');
+      setTimeout(connect, 2000);
+    };
+    ws.onerror = () => {};
+    ws.onmessage = (ev) => {
+      let d;
+      try { d = JSON.parse(ev.data); } catch (_) { return; }
+      if (d.rawEeg !== undefined) onSample(d.rawEeg);
+      if (d.poorSignalLevel !== undefined) onPoorSignal(d.poorSignalLevel);
+    };
+  }
+
+  function setBridge(text, cls) {
+    const el = $('st-bridge');
+    el.textContent = text;
+    el.className = 'value ' + (cls || '');
+  }
+
+  function onPoorSignal(v) {
+    if (session && v !== lastPoorSignal) logEvent('signal_quality', { note: String(v) });
+    lastPoorSignal = v;
+    const el = $('st-signal');
+    if (v === 0) { el.textContent = 'Good (0)'; el.className = 'value good'; }
+    else if (v < 50) { el.textContent = `Fair (${v})`; el.className = 'value warn'; }
+    else if (v >= 200) { el.textContent = `No contact (${v})`; el.className = 'value bad'; }
+    else { el.textContent = `Poor (${v})`; el.className = 'value bad'; }
+  }
+
+  // ---------- session ----------
+  let session = null;
+
+  function onSample(raw) {
+    const t = now();
+    totalReceived++;
+    trace[traceHead] = raw;
+    traceHead = (traceHead + 1) % trace.length;
+
+    if (!session) return;
+    if (session.lastSampleT && t - session.lastSampleT > GAP_MS) {
+      session.gaps++;
+      logEvent('dropout', { note: `no samples for ${Math.round(t - session.lastSampleT)} ms` });
+    }
+    session.lastSampleT = t;
+    if (session.firstSampleT === null) session.firstSampleT = t;
+    session.rows.push(`${session.sampleIndex},${t.toFixed(1)},${raw},${lastPoorSignal ?? ''}`);
+    session.sampleIndex++;
+  }
+
+  function logEvent(type, extra = {}) {
+    const t = now();
+    const sampleIndex = extra.sampleIndex ?? (session ? session.sampleIndex : '');
+    const audioTime = session && session.audioStarted ? player.currentTime.toFixed(3) : '';
+    const row = { sample_index: sampleIndex, t_ms: t.toFixed(1), event: type, condition: extra.condition ?? '', audio_time_s: audioTime, note: extra.note ?? '' };
+    if (session) session.events.push(row);
+    const line = document.createElement('div');
+    const clock = new Date(t).toLocaleTimeString();
+    line.textContent = `${clock}  ${type}${row.condition ? ' · ' + row.condition : ''}${row.note ? ' · ' + row.note : ''}${sampleIndex !== '' ? '  [sample ' + sampleIndex + ']' : ''}`;
+    const log = $('event-log');
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function sessionName() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `session-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+  }
+
+  async function api(action, file, body) {
+    const q = new URLSearchParams({ session: session.name });
+    if (file) q.set('file', file);
+    const res = await fetch(`/api/v2/${action}?${q}`, { method: 'POST', body });
+    if (!res.ok) throw new Error(`${action} ${file}: HTTP ${res.status}`);
+    return res.json();
+  }
+
+  function startSession() {
+    const tl = timeline();
+    const recordOnly = $('record-only').checked;
+    if (!recordOnly && !player.src) { alertInline('Load the test track first, or tick "Record only".'); return; }
+    if (!recordOnly && !tl.length) { alertInline('Add at least one block to the schedule.'); return; }
+
+    const startBlock = recordOnly ? null : Number($('start-block').value) || 0;
+    session = {
+      name: sessionName(),
+      startedAt: new Date().toISOString(),
+      recordOnly, startBlock, timeline: tl,
+      sampleIndex: 0, firstSampleT: null, lastSampleT: null,
+      rows: ['sample_index,t_received_ms,raw,poor_signal'],
+      events: [], savedSamples: 0, gaps: 0,
+      audioStarted: false, currentBlock: null, flushing: false, saveError: null,
+      t0: now(),
+    };
+    $('event-log').innerHTML = '';
+    logEvent('session_start', { note: recordOnly ? 'record only' : `audio from block ${startBlock + 1}` });
+    writeMeta();
+    session.flushTimer = setInterval(flush, FLUSH_MS);
+    session.tickTimer = setInterval(tick, 50);
+
+    if (!recordOnly) {
+      player.pause();
+      player.currentTime = tl[startBlock].start_s;
+      session.prerollTimer = setTimeout(() => {
+        player.play().catch((e) => logEvent('audio_error', { note: e.message }));
+      }, PREROLL_S * 1000);
+    }
+    setControls();
+  }
+
+  player.addEventListener('playing', () => {
+    if (!session || session.audioStarted) return;
+    session.audioStarted = true;
+    session.audioStartSample = session.sampleIndex;
+    session.audioStartPos = player.currentTime;
+    logEvent('audio_start', { note: `track position ${player.currentTime.toFixed(3)} s` });
+  });
+  player.addEventListener('waiting', () => { if (session && session.audioStarted) logEvent('audio_stalled'); });
+  player.addEventListener('ended', () => {
+    if (!session) return;
+    logEvent('audio_end');
+    setTimeout(() => { if (session) stopSession(); }, PREROLL_S * 1000);
+  });
+
+  // Watches the track position and logs a block_start event at each boundary.
+  function tick() {
+    if (!session) return;
+    const elapsed = (now() - session.t0) / 1000;
+    $('st-elapsed').textContent = fmt(elapsed);
+    $('st-saved').textContent = (session.savedSamples).toLocaleString();
+    $('st-gaps').textContent = session.gaps;
+    const silentFor = now() - (session.lastSampleT ?? session.t0);
+    const st = $('st-session');
+    if (silentFor > 2000) {
+      st.textContent = `⚠ No data from the headset for ${fmt(silentFor / 1000)} — check the headset and phone app (recording continues)`;
+      st.className = 'bigstate warn';
+    } else if (!session.saveError) {
+      st.textContent = `● Recording — ${session.name}`;
+      st.className = 'bigstate bad';
+    }
+
+    if (!session.audioStarted) {
+      $('st-block').textContent = session.recordOnly ? 'Record only' : 'Pre-roll';
+      $('st-left').textContent = session.recordOnly ? '—' : fmt(PREROLL_S - elapsed);
+      return;
+    }
+    const pos = player.currentTime;
+    const tl = session.timeline;
+    const b = tl.find((x) => pos >= x.start_s && pos < x.end_s) || null;
+    const idx = b ? b.index : null;
+    if (idx !== session.currentBlock) {
+      // Stamp the boundary from the audio_start anchor rather than this 50 ms timer,
+      // so every block has the same (constant) offset from the true audio timing.
+      if (b) {
+        const rate = measuredRate() || NOMINAL_RATE;
+        const at = Math.max(session.audioStartSample, Math.round(session.audioStartSample + (b.start_s - session.audioStartPos) * rate));
+        logEvent('block_start', { condition: b.condition, sampleIndex: at, note: `block ${b.index + 1}, track time ${b.start_s} s` });
+      }
+      else logEvent('past_schedule', { note: 'track position is beyond the last scheduled block' });
+      session.currentBlock = idx;
+      document.querySelectorAll('tr.current').forEach((r) => r.classList.remove('current'));
+      if (b) $('block-row-' + b.index)?.classList.add('current');
+    }
+    $('st-block').textContent = b ? `${b.index + 1}. ${b.condition}` : '—';
+    $('st-left').textContent = b ? fmt(b.end_s - pos) : '—';
+  }
+
+  function eventsCSV() {
+    const esc = (s) => /[",\n]/.test(s) ? `"${String(s).replace(/"/g, '""')}"` : s;
+    const head = 'sample_index,t_ms,event,condition,audio_time_s,note';
+    return [head, ...session.events.map((e) =>
+      [e.sample_index, e.t_ms, e.event, esc(e.condition), e.audio_time_s, esc(e.note)].join(','))].join('\n') + '\n';
+  }
+
+  function measuredRate() {
+    if (!session || session.firstSampleT === null || session.sampleIndex < 2) return null;
+    return (session.sampleIndex - 1) / ((session.lastSampleT - session.firstSampleT) / 1000);
+  }
+
+  function metaJSON() {
+    const rate = measuredRate();
+    return JSON.stringify({
+      app: APP_VERSION,
+      started_at: session.startedAt,
+      stopped_at: session.stoppedAt ?? null,
+      record_only: session.recordOnly,
+      audio_file: session.recordOnly ? null : audioFileName,
+      audio_duration_s: session.recordOnly ? null : player.duration,
+      start_block: session.recordOnly ? null : session.startBlock + 1,
+      preroll_s: session.recordOnly ? 0 : PREROLL_S,
+      schedule: session.timeline.map((b) => ({ block: b.index + 1, condition: b.condition, start_s: b.start_s, duration_s: b.duration_s })),
+      samples_total: session.sampleIndex,
+      nominal_rate_hz: NOMINAL_RATE,
+      measured_rate_hz: rate ? Number(rate.toFixed(4)) : null,
+      dropouts: session.gaps,
+      raw_units: 'MindWave ADC counts. Approx. microvolts = raw * 0.2197 (NeuroSky: raw * (1.8/4096) / 2000 V).',
+      device: 'NeuroSky MindWave Mobile 2, single dry electrode at Fp1, reference/ground on left earlobe',
+    }, null, 2);
+  }
+
+  const README = `EEG Recorder v2 session
+=======================
+
+recording.csv  One row per raw EEG sample, in the order received.
+  sample_index     0,1,2,... Continuous counter; use this (divided by the sample
+                   rate) as the time axis. The headset samples at ~512 Hz;
+                   session.json has the rate measured over this session.
+  t_received_ms    Unix time (ms) the sample reached the Mac. Samples travel
+                   headset -> iPhone (Bluetooth) -> Mac (Wi-Fi) in batches, so
+                   this is jittery; don't use it for fine timing.
+  raw              Raw EEG value in ADC counts (see session.json for µV scale).
+  poor_signal      NeuroSky signal-quality code (0 = good, 200 = no contact),
+                   updated about once per second.
+
+events.csv     Timeline markers.
+  block_start      A condition block began (condition column); sample_index is
+                   the recording sample at that moment.
+  audio_start      Track playback actually started (audio_time_s = position
+                   in the track).
+  dropout          No samples arrived for > ${GAP_MS} ms (e.g. Bluetooth hiccup).
+                   Samples missing during a dropout are NOT in recording.csv,
+                   so sample_index skips over that gap.
+  signal_quality   poor_signal value changed.
+
+session.json   Settings, block schedule (planned times within the audio
+               track), measured sample rate, and unit conversion.
+
+Timing note: the Bluetooth/Wi-Fi path adds a delay between the brain signal
+and when samples arrive. The delay should be roughly constant within one
+session, so relative timing between blocks in the same session is preserved,
+but the absolute alignment to the audio has an unknown offset (likely tens of ms).
+`;
+
+  function writeMeta() {
+    api('write', 'session.json', metaJSON()).catch(saveFailed);
+    api('write', 'README.txt', README).catch(saveFailed);
+  }
+
+  async function flush() {
+    if (!session || session.flushing) return;
+    session.flushing = true;
+    const s = session;
+    const batch = s.rows;
+    s.rows = [];
+    const dataRows = batch.length - (batch[0].startsWith('sample_index') ? 1 : 0);
+    try {
+      if (batch.length) await api('append', 'recording.csv', batch.join('\n') + '\n');
+      s.savedSamples += dataRows;
+      await api('write', 'events.csv', eventsCSV());
+      if (s.saveError) { s.saveError = null; logEvent('save_recovered'); }
+    } catch (e) {
+      s.rows = batch.concat(s.rows);   // keep the data and retry next flush
+      saveFailed(e);
+    }
+    s.flushing = false;
+  }
+
+  function saveFailed(e) {
+    if (session && !session.saveError) {
+      session.saveError = e.message;
+      logEvent('save_error', { note: e.message + ' — will keep retrying; data is held in memory' });
+    }
+  }
+
+  async function stopSession() {
+    if (!session) return;
+    clearTimeout(session.prerollTimer);
+    clearInterval(session.tickTimer);
+    clearInterval(session.flushTimer);
+    player.pause();
+    logEvent('session_stop', { note: `${session.sampleIndex} samples, measured rate ${measuredRate()?.toFixed(3) ?? '—'} Hz` });
+    session.stoppedAt = new Date().toISOString();
+    const s = session;
+    // Wait out any in-flight flush, then write everything that's left.
+    while (s.flushing) await new Promise((r) => setTimeout(r, 50));
+    for (let tries = 0; tries < 5; tries++) {
+      await flush();
+      if (!s.rows.length) break;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    try { await api('write', 'session.json', metaJSON()); } catch (e) { saveFailed(e); }
+    lastSessionName = s.name;
+    session = null;
+    const ok = !s.rows.length;
+    $('st-session').textContent = ok
+      ? `Saved: recordings/${s.name}/  (${s.savedSamples.toLocaleString()} samples)`
+      : `⚠ Could not save ${s.rows.length} samples — keep this tab open and check the server`;
+    $('st-session').className = 'bigstate ' + (ok ? 'good' : 'bad');
+    renderSchedule();
+  }
+
+  let lastSessionName = null;
+  $('btn-start').addEventListener('click', startSession);
+  $('btn-stop').addEventListener('click', stopSession);
+  $('btn-reveal').addEventListener('click', () => {
+    const name = session ? session.name : lastSessionName;
+    if (name) fetch(`/api/v2/reveal?session=${encodeURIComponent(name)}`, { method: 'POST' });
+  });
+
+  function alertInline(msg) {
+    $('st-session').textContent = msg;
+    $('st-session').className = 'bigstate warn';
+  }
+
+  function setControls() {
+    const active = !!session;
+    $('btn-start').disabled = active;
+    $('btn-stop').disabled = !active;
+    $('btn-reveal').disabled = !active && !lastSessionName;
+    $('start-block').disabled = active || $('record-only').checked;
+    $('record-only').disabled = active;
+    $('audio-file').disabled = active;
+    // While recording the schedule is locked; renderSchedule() rebuilds it unlocked afterwards.
+    if (active) document.querySelectorAll('#schedule-body input, #schedule-body button').forEach((el) => { el.disabled = true; });
+    $('btn-add-row').disabled = active;
+    if (active) {
+      $('st-session').textContent = `● Recording — ${session.name}`;
+      $('st-session').className = 'bigstate bad';
+    }
+  }
+  $('record-only').addEventListener('change', setControls);
+
+  window.addEventListener('beforeunload', (e) => {
+    if (session) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // ---------- live rate + trace ----------
+  setInterval(() => {
+    const t = now();
+    rateWindow.push([t, totalReceived]);
+    while (rateWindow.length && t - rateWindow[0][0] > 10000) rateWindow.shift();
+    const el = $('st-rate');
+    if (rateWindow.length > 1) {
+      const [t0, n0] = rateWindow[0];
+      const rate = (totalReceived - n0) / ((t - t0) / 1000);
+      el.textContent = rate.toFixed(1);
+      el.className = 'value ' + (rate > 480 ? 'good' : rate > 0 ? 'warn' : 'bad');
+    }
+  }, 500);
+
+  const canvas = $('trace'), ctx = canvas.getContext('2d');
+  function draw() {
+    const W = canvas.width, H = canvas.height, N = trace.length;
+    ctx.clearRect(0, 0, W, H);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < N; i++) { lo = Math.min(lo, trace[i]); hi = Math.max(hi, trace[i]); }
+    const span = Math.max(hi - lo, 50);
+    const mid = (hi + lo) / 2;
+    ctx.strokeStyle = '#7ec8f7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const v = trace[(traceHead + i) % N];
+      const x = (i / (N - 1)) * W;
+      const y = H / 2 - ((v - mid) / span) * (H * 0.9);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    requestAnimationFrame(draw);
+  }
+
+  renderSchedule();
+  connect();
+  draw();
+</script>
+</body>
+</html>
