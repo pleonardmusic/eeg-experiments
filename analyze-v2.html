@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EEG Analysis v2</title>
+<style>
+  :root {
+    --surface: #111; --panel: #1b1b1b; --border: #2a2a2a; --grid: #262626;
+    --text: #ddd; --text-strong: #fff; --text-muted: #888;
+    --series-1: #3987e5;      /* 40 Hz */
+    --sham: #6b6b6b;          /* off-frequency noise floor */
+    --good: #7ef7a0; --warn: #f7d47e; --bad: #f77e7e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 60px;
+    background: var(--surface); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: var(--text-strong); }
+  .sub { color: var(--text-muted); margin: 0 0 20px; }
+  .sub a, .note a { color: var(--series-1); }
+  .section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #999; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+  .stat .label { color: var(--text-muted); font-size: 12px; }
+  .stat .value { font-size: 18px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+  .good { color: var(--good) !important; }
+  .warn { color: var(--warn) !important; }
+  .bad  { color: var(--bad) !important; }
+  button {
+    background: #2d2d2d; color: #eee; border: 1px solid #444; border-radius: 6px;
+    padding: 7px 14px; font: inherit; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #383838; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: #1f5f3a; border-color: #2c8a54; }
+  button.primary:hover:not(:disabled) { background: #26704a; }
+  select { background: #0f0f0f; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 5px 8px; font: inherit; max-width: 100%; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--text-muted); font-weight: normal; font-size: 12px; }
+  td.num, th.num { text-align: right; }
+  .note { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+  .info { color: #aaa; font-size: 13px; margin: 0 0 10px; }
+  .bigstate { font-size: 16px; color: var(--text-strong); margin-top: 12px; }
+  .verdict { font-size: 15px; color: var(--text-strong); margin: 0 0 10px; }
+  .blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .block { background: #151515; border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+  .block h3 { font-size: 14px; margin: 0 0 2px; color: var(--text-strong); font-weight: 600; }
+  .block .meta { font-size: 12px; color: var(--text-muted); }
+  .block svg { width: 100%; height: auto; display: block; margin: 6px 0 4px; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: #aaa; margin-bottom: 10px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; }
+  .tip {
+    position: fixed; pointer-events: none; background: #000; border: 1px solid #444; border-radius: 4px;
+    padding: 4px 8px; font-size: 12px; color: var(--text-strong); display: none; z-index: 10; font-variant-numeric: tabular-nums;
+  }
+  .badge { font-size: 12px; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; }
+  #results { display: none; }
+  .seg { display: inline-flex; border: 1px solid #444; border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: #1f1f1f; padding: 7px 18px; }
+  .seg button + button { border-left: 1px solid #444; }
+  .seg button.on { background: #1f4a7a; color: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>EEG Analysis v2</h1>
+  <p class="sub">Single-cycle (25&nbsp;ms) averaging of a saved Recorder v2 session, following Rangel et al. (2024). <a href="recorder-v2.html">← Back to the recorder</a></p>
+
+  <div class="section">
+    <h2>1 · Session</h2>
+    <div class="row">
+      <select id="session-list"><option>Loading…</option></select>
+      <button id="btn-analyze" class="primary" disabled>Analyze</button>
+      <button id="btn-refresh">Refresh list</button>
+    </div>
+    <div class="bigstate" id="status"></div>
+  </div>
+
+  <div id="results">
+    <div class="section">
+      <div class="row">
+        <div class="seg" id="hz-switch"></div>
+        <div class="note" id="hz-note" style="margin:0; flex:1; min-width:240px"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>2 · Result by condition</h2>
+      <p class="verdict" id="verdict"></p>
+      <div class="table-wrap"><table id="cond-table"></table></div>
+      <p class="info" id="cond-info"></p>
+    </div>
+
+    <div class="section">
+      <h2 id="wave-title">3 · Averaged waveform, each block</h2>
+      <div class="legend">
+        <span><i style="background:var(--series-1)"></i><span id="wave-legend">Averaged cycle</span></span>
+        <span><i style="background:var(--sham)"></i>Noise-floor band (± average sham ASSR)</span>
+      </div>
+      <div class="blocks" id="blocks"></div>
+      <p class="note">All blocks share one vertical scale. A real response is a clear, smooth wave standing well outside the grey band,
+        with the same shape (timing) in every block of that condition. Waveforms line up across blocks because every block is
+        measured from the same starting point, the moment the track began.</p>
+    </div>
+
+    <div class="section">
+      <h2>4 · Data quality</h2>
+      <div class="row" id="quality"></div>
+      <p class="note" id="quality-note"></p>
+    </div>
+  </div>
+</main>
+<div class="tip" id="tip"></div>
+
+<script src="analysis-v2.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  let sessions = [];
+
+  async function loadList() {
+    const sel = $('session-list');
+    try {
+      const res = await fetch('/api/v2/sessions');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      sessions = (await res.json()).sessions;
+    } catch (e) {
+      sel.innerHTML = '<option>Could not reach the server</option>';
+      setStatus('The app server is not responding. Reopen "EEG Recorder v2" from the Desktop, then click Refresh list.', 'bad');
+      return;
+    }
+    if (!sessions.length) {
+      sel.innerHTML = '<option>No saved sessions yet</option>';
+      $('btn-analyze').disabled = true;
+      return;
+    }
+    sel.innerHTML = sessions.map((s, i) => {
+      const m = s.meta || {};
+      const what = m.record_only ? 'record only' : (m.audio_file || 'unknown track');
+      const blocks = m.schedule ? `${m.schedule.length} blocks` : '';
+      return `<option value="${i}">${s.name.replace('session-', '')}  ·  ${esc(what)}  ${blocks ? '· ' + blocks : ''}</option>`;
+    }).join('');
+    $('btn-analyze').disabled = false;
+    const want = new URLSearchParams(location.search).get('session');
+    const hit = sessions.findIndex((s) => s.name === want);
+    if (hit >= 0) { sel.value = hit; run(); }
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function setStatus(msg, cls) { $('status').textContent = msg; $('status').className = 'bigstate ' + (cls || ''); }
+
+  async function run() {
+    const s = sessions[Number($('session-list').value)];
+    if (!s) return;
+    $('btn-analyze').disabled = true;
+    $('results').style.display = 'none';
+    setStatus('Loading files…');
+    try {
+      const base = `/recordings/${encodeURIComponent(s.name)}/`;
+      const [recordingText, eventsText] = await Promise.all([
+        fetch(base + 'recording.csv').then((r) => { if (!r.ok) throw new Error('recording.csv missing'); return r.text(); }),
+        fetch(base + 'events.csv').then((r) => { if (!r.ok) throw new Error('events.csv missing'); return r.text(); }),
+      ]);
+      setStatus('Analyzing… (a long session can take several seconds)');
+      await new Promise((r) => setTimeout(r, 30));
+      const t0 = performance.now();
+      const result = AnalysisV2.analyze({ recordingText, eventsText, meta: s.meta });
+      render(result);
+      const saved = await saveCSV(s.name, result);
+      setStatus(`Done in ${((performance.now() - t0) / 1000).toFixed(1)} s${saved ? ' · results saved to recordings/' + s.name + '/analysis.csv' : ''}`, 'good');
+    } catch (e) {
+      setStatus('Could not analyze this session: ' + e.message, 'bad');
+    }
+    $('btn-analyze').disabled = false;
+  }
+
+  function strength(ratio) {
+    if (ratio >= 2) return ['Stands out', 'good'];
+    if (ratio >= 1.4) return ['Borderline', 'warn'];
+    return ['Not above noise', ''];
+  }
+
+  function byCondition(blocks) {
+    const map = new Map();
+    for (const b of blocks.filter((x) => !x.tooShort)) {
+      if (!map.has(b.condition)) map.set(b.condition, []);
+      map.get(b.condition).push(b);
+    }
+    const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+    return [...map.entries()].map(([condition, bs]) => ({
+      condition, n: bs.length,
+      assr: mean(bs.map((b) => b.target.assr)), shamAssr: mean(bs.map((b) => b.shamAssr)),
+      icpc: mean(bs.map((b) => b.target.icpc)), shamIcpc: mean(bs.map((b) => b.shamIcpc)),
+      ratioAssr: mean(bs.map((b) => b.snrAssr)), ratioIcpc: mean(bs.map((b) => b.snrIcpc)),
+      minRatio: Math.min(...bs.map((b) => Math.min(b.snrAssr, b.snrIcpc))),
+    }));
+  }
+
+  const HZ_NOTES = {
+    40: 'The stimulus rate. Every track so far pulses at 40 Hz.',
+    80: 'Twice the stimulus rate. In an A+B mix the A and B bands pulse half a cycle apart, so their 40 Hz responses can cancel ' +
+        'at the single forehead sensor while the 80 Hz parts add up. Caution: A+B files also have a small 80 Hz loudness ripple ' +
+        '(the level dips slightly at each A/B crossover), so an 80 Hz response to A+B could be ordinary loudness-following too. ' +
+        'Pulsed drones and clicks naturally show some 80 Hz as well, as part of their 40 Hz response.',
+  };
+  let lastResult = null, currentHz = 40;
+
+  function render(r) {
+    lastResult = r;
+    $('results').style.display = 'block';
+    const hzs = r.options.targets.map((t) => t.hz);
+    if (!hzs.includes(currentHz)) currentHz = hzs[0];
+    $('hz-switch').innerHTML = hzs.map((h) => `<button data-hz="${h}" class="${h === currentHz ? 'on' : ''}">${h} Hz</button>`).join('');
+    $('hz-switch').querySelectorAll('button').forEach((btn) => btn.addEventListener('click', () => {
+      currentHz = Number(btn.dataset.hz);
+      render(lastResult);
+    }));
+    renderHz(r, currentHz);
+  }
+
+  function renderHz(r, hz) {
+    const tgt = r.options.targets.find((t) => t.hz === hz);
+    const periodMs = 1000 / hz;
+    const pms = Number.isInteger(periodMs) ? periodMs : periodMs.toFixed(1);
+    $('hz-note').textContent = HZ_NOTES[hz] || '';
+    $('wave-title').textContent = `3 · Averaged ${pms} ms waveform (${hz} Hz), each block`;
+    $('wave-legend').textContent = `${hz} Hz averaged cycle`;
+    $('cond-info').innerHTML =
+      `<b>ASSR</b> is the peak of the averaged ${pms}&nbsp;ms waveform, the paper's measure. <b>ICPC</b> is how consistently each cycle's ` +
+      `phase lines up, from 0 (random) to 1 (identical). Each is also measured at nearby frequencies nothing in the track pulses at ` +
+      `(${tgt.shamHz.join(', ')}&nbsp;Hz). Their average is the <b>noise floor</b>: what the method finds when there's no response. ` +
+      `<b>× floor</b> is the ${hz}&nbsp;Hz value divided by that floor. Around 1× means nothing is there. About 2× or more in both ` +
+      `columns, repeating across blocks, means a real ${hz}&nbsp;Hz response.`;
+    // flatten this frequency's numbers onto each block
+    const blocks = r.blocks.map((b) => (b.tooShort ? b : { ...b, ...b.byHz[hz] }));
+    const conds = byCondition(blocks);
+
+    // verdict
+    const strong = conds.filter((c) => c.minRatio >= 2);
+    const border = conds.filter((c) => c.minRatio < 2 && Math.min(c.ratioAssr, c.ratioIcpc) >= 1.4);
+    let v;
+    if (strong.length) v = `A ${hz} Hz response stands out above the noise floor in every block of: ${strong.map((c) => c.condition).join(', ')}.`;
+    else if (border.length) v = `No condition shows a clear ${hz} Hz response. ${border.map((c) => c.condition).join(', ')} ${border.length > 1 ? 'are' : 'is'} borderline.`;
+    else v = `No condition shows a ${hz} Hz response above the noise floor.`;
+    $('verdict').textContent = v;
+
+    const f = (x, d = 3) => x.toFixed(d);
+    $('cond-table').innerHTML = `
+      <thead><tr><th>Condition</th><th class="num">Blocks</th>
+        <th class="num">ASSR µV</th><th class="num">Floor</th><th class="num">× floor</th>
+        <th class="num">ICPC</th><th class="num">Floor</th><th class="num">× floor</th><th></th></tr></thead>
+      <tbody>${conds.map((c) => {
+        const [label, cls] = strength(Math.min(c.ratioAssr, c.ratioIcpc));
+        return `<tr><td>${esc(c.condition)}</td><td class="num">${c.n}</td>
+          <td class="num">${f(c.assr)}</td><td class="num">${f(c.shamAssr)}</td><td class="num">${f(c.ratioAssr, 2)}×</td>
+          <td class="num">${f(c.icpc)}</td><td class="num">${f(c.shamIcpc)}</td><td class="num">${f(c.ratioIcpc, 2)}×</td>
+          <td><span class="badge ${cls}">${label}</span></td></tr>`;
+      }).join('')}</tbody>`;
+
+    // per-block waveforms on one shared scale
+    const ok = blocks.filter((b) => !b.tooShort);
+    const yMax = Math.max(0.05, ...ok.map((b) => Math.max(b.shamAssr, ...b.target.wave.map(Math.abs)))) * 1.15;
+    const wrap = $('blocks');
+    wrap.innerHTML = '';
+    for (const b of blocks) {
+      const card = document.createElement('div');
+      card.className = 'block';
+      if (b.tooShort) {
+        card.innerHTML = `<h3>${b.block}. ${esc(b.condition)}</h3><div class="meta">Too short to analyze (under ~9 s of usable data).</div>`;
+        wrap.appendChild(card);
+        continue;
+      }
+      const [label, cls] = strength(Math.min(b.snrAssr, b.snrIcpc));
+      card.innerHTML = `<h3>${b.block}. ${esc(b.condition)}</h3>
+        <div class="meta">${Math.round(b.durationS)} s · ${b.target.cycles.toLocaleString()} cycles averaged</div>`;
+      card.appendChild(waveChart(b, yMax, hz));
+      const m = document.createElement('div');
+      m.className = 'meta';
+      m.innerHTML = `ASSR ${f(b.target.assr)} µV (${f(b.snrAssr, 2)}× floor) · ICPC ${f(b.target.icpc)} (${f(b.snrIcpc, 2)}×)<br>
+        <span class="badge ${cls}">${label}</span>`;
+      card.appendChild(m);
+      wrap.appendChild(card);
+    }
+
+    // quality
+    const t = r.timing;
+    const rej = ok.reduce((s, b) => s + b.target.rejected, 0), kept = ok.reduce((s, b) => s + b.target.cycles, 0);
+    const rejPct = 100 * rej / Math.max(1, rej + kept);
+    const unusablePct = 100 * r.unusableFraction;
+    const q = [
+      ['Headset rate (fitted)', t.measuredRateHz.toFixed(3) + ' Hz', Math.abs(t.measuredRateHz - 512) < 3 ? '' : 'warn'],
+      ['Arrival jitter', t.jitterMs.toFixed(0) + ' ms', ''],
+      ['Dropouts', `${t.gaps} (${t.lostSamples} samples lost)`, t.lostSamples > 512 * 5 ? 'warn' : ''],
+      ['Unusable data', unusablePct.toFixed(1) + '%', unusablePct > 20 ? 'bad' : unusablePct > 5 ? 'warn' : 'good'],
+      ['Cycles rejected (artifacts)', rejPct.toFixed(1) + '%', rejPct > 10 ? 'warn' : ''],
+    ];
+    $('quality').innerHTML = q.map(([l, val, cls]) => `<div class="stat"><div class="label">${l}</div><div class="value ${cls}">${val}</div></div>`).join('');
+    $('quality-note').textContent =
+      'Unusable = poor signal (NeuroSky quality ≥ 50), plus 1 s either side of a dropout. The first and last 2 s of every block are also left out. ' +
+      'Rejected = cycles over 2.5× the average cycle amplitude, mostly blinks and movement. The headset rate is fitted over the whole session, ' +
+      'because folding minutes of data into 25 ms cycles needs it accurate to about 0.01%, and the nominal 512 Hz is not.';
+  }
+
+  function waveChart(b, yMax, hz) {
+    const W = 260, H = 130, L = 34, R = 6, T = 8, B = 20;
+    const pw = W - L - R, ph = H - T - B;
+    const periodMs = 1000 / hz;
+    const X = (ms) => L + (ms / periodMs) * pw;
+    const Y = (v) => T + ph / 2 - (v / yMax) * (ph / 2);
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', `${b.condition}: averaged ${hz} Hz cycle, peak ${b.target.assr.toFixed(3)} µV`);
+    const add = (tag, attrs, text) => {
+      const el = document.createElementNS(SVGNS, tag);
+      for (const k in attrs) el.setAttribute(k, attrs[k]);
+      if (text !== undefined) el.textContent = text;
+      svg.appendChild(el);
+      return el;
+    };
+    // noise-floor band
+    add('rect', { x: L, y: Y(b.shamAssr), width: pw, height: Y(-b.shamAssr) - Y(b.shamAssr), fill: 'var(--sham)', opacity: 0.28 });
+    // axes / grid
+    add('line', { x1: L, x2: L + pw, y1: Y(0), y2: Y(0), stroke: '#333', 'stroke-width': 1 });
+    const tickV = niceTick(yMax);
+    for (const v of [tickV, -tickV]) {
+      add('line', { x1: L, x2: L + pw, y1: Y(v), y2: Y(v), stroke: 'var(--grid)', 'stroke-width': 1 });
+      add('text', { x: L - 4, y: Y(v) + 3, 'text-anchor': 'end', 'font-size': 9, fill: '#888' }, (v > 0 ? '+' : '') + fmtTick(v));
+    }
+    add('text', { x: L - 4, y: Y(0) + 3, 'text-anchor': 'end', 'font-size': 9, fill: '#888' }, 'µV');
+    for (const ms of [0, periodMs / 2, periodMs]) add('text', { x: X(ms), y: H - 6, 'text-anchor': ms === 0 ? 'start' : ms === periodMs ? 'end' : 'middle', 'font-size': 9, fill: '#888' }, +ms.toFixed(2) + ' ms');
+    // waveform (bin centres)
+    const n = b.target.wave.length;
+    const pts = b.target.wave.map((v, i) => [X((i + 0.5) / n * periodMs), Y(v)]);
+    add('path', { d: 'M' + pts.map((p) => p.map((c) => c.toFixed(1)).join(',')).join('L'), fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2, 'stroke-linejoin': 'round' });
+    // hover
+    const cross = add('line', { y1: T, y2: T + ph, stroke: '#666', 'stroke-width': 1, visibility: 'hidden' });
+    const dot = add('circle', { r: 4, fill: 'var(--series-1)', stroke: 'var(--panel)', 'stroke-width': 2, visibility: 'hidden' });
+    const hit = add('rect', { x: L, y: 0, width: pw, height: H, fill: 'transparent' });
+    const tip = $('tip');
+    hit.addEventListener('mousemove', (e) => {
+      const r = svg.getBoundingClientRect();
+      const sx = (e.clientX - r.left) * (W / r.width);
+      const i = Math.max(0, Math.min(n - 1, Math.round(((sx - L) / pw) * n - 0.5)));
+      const [px, py] = pts[i];
+      cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.setAttribute('visibility', 'visible');
+      dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.setAttribute('visibility', 'visible');
+      tip.style.display = 'block';
+      tip.textContent = `${((i + 0.5) / n * periodMs).toFixed(2)} ms · ${b.target.wave[i] >= 0 ? '+' : ''}${b.target.wave[i].toFixed(3)} µV`;
+      tip.style.left = (e.clientX + 12) + 'px';
+      tip.style.top = (e.clientY - 28) + 'px';
+    });
+    hit.addEventListener('mouseleave', () => {
+      tip.style.display = 'none';
+      cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden');
+    });
+    return svg;
+  }
+
+  function niceTick(max) {
+    const raw = max * 0.7, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+    return (m >= 5 ? 5 : m >= 2 ? 2 : 1) * p;
+  }
+  function fmtTick(v) { const a = Math.abs(v); return a >= 1 ? v.toFixed(1) : a >= 0.1 ? v.toFixed(2) : v.toFixed(3); }
+
+  // Saved next to the recording so the numbers travel with the data.
+  async function saveCSV(name, r) {
+    const nSham = Math.max(...r.options.targets.map((t) => t.shamHz.length));
+    const head = ['target_hz', 'block', 'condition', 'duration_s', 'cycles_used', 'cycles_rejected', 'assr_uv', 'assr_floor_uv', 'assr_x_floor',
+      'icpc', 'icpc_floor', 'icpc_x_floor',
+      ...Array.from({ length: nSham }, (_, i) => `sham${i + 1}_hz`),
+      ...Array.from({ length: nSham }, (_, i) => `sham${i + 1}_assr_uv`), ...Array.from({ length: nSham }, (_, i) => `sham${i + 1}_icpc`),
+      ...Array.from({ length: r.options.bins }, (_, i) => `wave_bin${i + 1}_uv`)];
+    const q = (s) => /[",\n]/.test(s) ? `"${String(s).replace(/"/g, '""')}"` : s;
+    const rows = [];
+    for (const { hz } of r.options.targets) {
+      for (const b of r.blocks.filter((x) => !x.tooShort)) {
+        const t = b.byHz[hz];
+        rows.push([
+          hz, b.block, q(b.condition), b.durationS.toFixed(1), t.target.cycles, t.target.rejected,
+          t.target.assr.toFixed(5), t.shamAssr.toFixed(5), t.snrAssr.toFixed(3),
+          t.target.icpc.toFixed(5), t.shamIcpc.toFixed(5), t.snrIcpc.toFixed(3),
+          ...t.sham.map((x) => x.freqHz), ...t.sham.map((x) => x.assr.toFixed(5)), ...t.sham.map((x) => x.icpc.toFixed(5)),
+          ...t.target.wave.map((v) => v.toFixed(5)),
+        ].join(','));
+      }
+    }
+    const header = `# EEG Analysis v2 — single-cycle averaging (Rangel et al. 2024) at ${r.options.targets.map((t) => t.hz + ' Hz').join(' and ')}. ` +
+      `Band-pass 3rd-order Butterworth ±${r.options.halfBandHz} Hz, zero-phase; ${r.options.trimS} s trimmed at block edges; ` +
+      `cycles > ${r.options.rejectFactor}× mean cycle amplitude rejected; fitted headset rate ${r.timing.measuredRateHz.toFixed(4)} Hz. ` +
+      `One row per block per target frequency; wave bins span one cycle of target_hz.\n`;
+    try {
+      const res = await fetch(`/api/v2/write?session=${encodeURIComponent(name)}&file=analysis.csv`, { method: 'POST', body: header + head.join(',') + '\n' + rows.join('\n') + '\n' });
+      return res.ok;
+    } catch (_) { return false; }
+  }
+
+  $('btn-analyze').addEventListener('click', run);
+  $('btn-refresh').addEventListener('click', loadList);
+  loadList();
+</script>
+</body>
+</html>

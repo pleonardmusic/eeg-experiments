@@ -4,8 +4,20 @@ import Foundation
 /// persistent WebSocket connection. Raw 512Hz samples need a continuous
 /// stream rather than periodic polling, so the iPhone connects out as a
 /// client instead of running its own server.
+///
+/// Raw samples go out in batches of `batchSize` ({"rawBatch":[...]}), not one
+/// message each: 512 tiny messages a second was too much for the phone.
+/// bridge-iphone.js unpacks batches back into single {"rawEeg":N} messages.
 class MacBridgeClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
     @Published var status = "Not connected"
+    /// Raw samples per second actually handed to the socket (updated every second).
+    @Published var sentRate = 0
+
+    private let batchSize = 16
+    private let batchQueue = DispatchQueue(label: "MacBridgeClient.batch")
+    private var batch: [Int16] = []
+    private var sentCount = 0
+    private var rateTimer: Timer?
 
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
@@ -17,6 +29,12 @@ class MacBridgeClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
     override init() {
         super.init()
         session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        batch.reserveCapacity(batchSize)
+        rateTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let n = self.batchQueue.sync { () -> Int in let n = self.sentCount; self.sentCount = 0; return n }
+            self.sentRate = n
+        }
     }
 
     func connect(host: String, port: UInt16 = 8767) {
@@ -38,19 +56,20 @@ class MacBridgeClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
         guard let host = targetHost else { return }
         status = "Connecting…"
         let url = URL(string: "ws://\(host):\(targetPort)")!
+        task?.cancel(with: .goingAway, reason: nil)   // don't leave stale sockets open on reconnect
         task = session.webSocketTask(with: url)
         task?.resume()
-        listen()
+        if let task { listen(task) }
     }
 
-    private func listen() {
-        task?.receive { [weak self] result in
-            guard let self else { return }
+    private func listen(_ current: URLSessionWebSocketTask) {
+        current.receive { [weak self] result in
+            guard let self, current === self.task else { return }   // ignore replaced sockets
             switch result {
             case .failure:
                 self.scheduleReconnect()
             case .success:
-                self.listen() // we don't expect inbound messages, just keep draining
+                self.listen(current) // we don't expect inbound messages, just keep draining
             }
         }
     }
@@ -68,15 +87,27 @@ class MacBridgeClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                      didOpenWithProtocol protocol: String?) {
+        guard webSocketTask === task else { return }
         DispatchQueue.main.async { self.status = "Connected" }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard task === self.task else { return }   // ignore replaced sockets
         scheduleReconnect()
     }
 
     func sendRaw(_ value: Int16) {
-        send("{\"rawEeg\":\(value)}")
+        batchQueue.async {
+            self.batch.append(value)
+            guard self.batch.count >= self.batchSize, self.task != nil else {
+                if self.task == nil { self.batch.removeAll(keepingCapacity: true) }
+                return
+            }
+            let text = "{\"rawBatch\":[" + self.batch.map(String.init).joined(separator: ",") + "]}"
+            self.sentCount += self.batch.count
+            self.batch.removeAll(keepingCapacity: true)
+            self.send(text)
+        }
     }
 
     func sendPacket(_ json: String) {

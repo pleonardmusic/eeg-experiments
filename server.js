@@ -53,16 +53,34 @@ function handleApi(req, res, url) {
   });
 }
 
+// GET /api/v2/sessions -> saved v2 sessions, newest first (used by analyze-v2.html)
+function listSessions(res) {
+  let names = [];
+  try { names = fs.readdirSync(RECORDINGS_DIR).filter((n) => SAFE_NAME.test(n)); } catch (_) {}
+  const sessions = names.map((name) => {
+    const dir = path.join(RECORDINGS_DIR, name);
+    let meta = null;
+    try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'session.json'), 'utf8')); } catch (_) {}
+    const has = (f) => fs.existsSync(path.join(dir, f));
+    return { name, meta, hasRecording: has('recording.csv'), hasEvents: has('events.csv') };
+  }).filter((s) => s.hasRecording);
+  sessions.sort((a, b) => (a.name < b.name ? 1 : -1));
+  sendJSON(res, 200, { sessions });
+}
+
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.csv': 'text/csv', '.txt': 'text/plain' };
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   if (req.method === 'POST' && url.pathname.startsWith('/api/v2/')) return handleApi(req, res, url);
+  if (req.method === 'GET' && url.pathname === '/api/v2/sessions') return listSessions(res);
 
   const reqPath = url.pathname === '/' ? '/index.html' : url.pathname;
   const file = path.join(__dirname, reqPath);
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
     res.writeHead(200, {
-      'Content-Type': 'text/html',
+      'Content-Type': MIME[path.extname(file).toLowerCase()] || 'text/html',
       'Access-Control-Allow-Origin': '*',
     });
     res.end(data);
@@ -72,4 +90,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`EEG app running at http://localhost:${PORT}`);
   console.log(`v2 recorder: http://localhost:${PORT}/recorder-v2.html`);
+  console.log(`v2 analysis: http://localhost:${PORT}/analyze-v2.html`);
 });

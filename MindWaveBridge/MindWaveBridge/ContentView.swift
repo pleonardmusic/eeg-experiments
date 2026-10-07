@@ -16,6 +16,13 @@ struct ContentView: View {
                             .foregroundColor(ble.status == "Live" ? .green : .secondary)
                             .font(.caption)
                     }
+                    HStack {
+                        Text("Samples/sec from headset")
+                        Spacer()
+                        Text("\(ble.headsetRate)")
+                            .foregroundColor(ble.headsetRate > 480 ? .green : .orange)
+                            .monospacedDigit()
+                    }
                     Button("Rescan") { ble.rescan() }
                 }
 
@@ -29,6 +36,13 @@ struct ContentView: View {
                         Text(bridge.status)
                             .foregroundColor(bridge.status == "Connected" ? .green : .secondary)
                             .font(.caption)
+                    }
+                    HStack {
+                        Text("Samples/sec sent to Mac")
+                        Spacer()
+                        Text("\(bridge.sentRate)")
+                            .foregroundColor(bridge.sentRate > 480 ? .green : .orange)
+                            .monospacedDigit()
                     }
                     Button(bridge.status == "Connected" ? "Disconnect" : "Connect") {
                         if bridge.status == "Connected" {

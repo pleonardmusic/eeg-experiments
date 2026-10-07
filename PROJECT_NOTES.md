@@ -71,6 +71,69 @@ v1 (`index.html`) is untouched and still works; both share `server.js` and
 - Verified 2026-09-30 with a simulated 40 Hz + noise stream: folding the saved
   recording into 25 ms cycles recovered the hidden wave's amplitude (40.6 vs 40).
 
+## v2 analysis (`analyze-v2.html` + `analysis-v2.js`, added 2026-09-30)
+Peter's own quick check of a v2 session. The official analysis is still Lara's
+team's. Open it from the recorder ("Analyze saved sessions →", or "Analyze this
+session" after Stop). It lists `recordings/` via `GET /api/v2/sessions` (server.js)
+and writes `analysis.csv` into the session folder.
+- Method per Rangel et al. 2024: 3rd-order Butterworth band-pass ±1 Hz, zero-phase
+  (JS filter verified identical to SciPy `butter`+`sosfiltfilt`, 1e-14); fold into
+  25 ms cycles by phase (25 bins); reject cycles > 2.5× mean cycle amplitude;
+  ASSR = max of averaged waveform; ICPC from each cycle's phase. 2 s trimmed at
+  block edges; poor_signal ≥ 50 and ±1 s around dropouts excluded.
+- Noise floor: same fold at 36/37/38/42/43/44 Hz; results shown as "× floor"
+  (≥2× both ASSR and ICPC = "Stands out").
+- **Timing is the critical part.** Headset rate is fitted from t_received vs
+  sample index over the whole session, with a separate offset after each arrival
+  gap (the jump in offset = samples lost; those are filled by interpolation and
+  flagged). Nominal 512 Hz would smear a multi-minute fold (0.1% rate error =
+  ~5 cycles of drift over 2 min). Remaining unknown: Mac vs audio-output clock
+  drift (~tens of ppm). Fine for 2-min blocks, borderline for 10-min blocks.
+  Bluetooth headphones would add their own clock and latency, so use wired.
+- Simulated test (headset at 511.7 Hz, 25 ms jitter, 400 ms of lost samples):
+  recovered rate 511.703, 205 lost samples; 0.6 µV response → ~9× floor,
+  0.2 µV → ~2.8×, 0.1 µV → ~1.4× (borderline), 0 → no false positive.
+- Test track: `~/Documents/Claude-Personal-Documents/Test-Audio/Click-test-40Hz-8min.wav` (Test-Audio = Peter's folder for test tracks/samples, sibling of this repo, kept out of git): Silence 2 / Click 2 /
+  Silence 2 / Click 2 min. 48 kHz stereo; clicks = 1 ms of 10 kHz sine
+  (standard, per Peter), −6 dBFS peak, every 1200 samples (exactly 40 Hz).
+- Fixed the recorder README: sample_index does NOT skip over dropouts.
+- **80 Hz added 2026-09-30** (40/80 Hz switch on the page; shams 74–86 Hz;
+  analysis.csv now has one row per block per target_hz). Why: in A+B the A and
+  B bands pulse half a cycle apart, so their 40 Hz responses may cancel at the
+  single electrode while 80 Hz parts add. Caveat: A+B audio itself has a small
+  80 Hz loudness ripple (level dips at each crossover); Track A alone has none.
+  First check of saved sessions: no 80 Hz response in either A+B run.
+
+## Sessions recorded 2026-09-30 (recordings/, all single 2-min blocks)
+Full interpretation is in ../40_Hz_ERB_Project/PROJECT_NOTES.md (2026-09-30 section).
+Test tracks are in ../Test-Audio/.
+- 18-56-49 · Click-test-40Hz-8min.wav (stopped after 2 blocks): Silence 1.1×, Click 2.8×.
+- 20-44-16 · silence-drone-silence-pulsed_drone.wav: Drone 1.0×, 40 Hz pulsed drone 4.4×.
+  (30 s silences too short to judge; one showed 1.66× by chance.)
+- 20-59-54 · silence-AB-test.wav (A+B original; block mislabelled "Pulsed-Drone"): 1.25×.
+- 21-14-34 · erb_comb_40hz_mixed-MORE-INTENSE.wav: 1.9× (borderline).
+- latest · dichotic-test-short.wav via wired earbuds: A left only 14×, A left/B right 2.3×.
+  **Earbud Hardware Null not yet run**: the 14× may be electrical leakage near the ear clip.
+- Speakers ≥1 m away are electrically safest; regular earbuds are risky; air-tube earbuds
+  are the recommended headphone option. Bluetooth audio must never be used (clock drift).
+
+## Troubleshooting: sample rate sinking (2026-09-30)
+Symptom: rate starts near 512 after a reconnect, then fades to ~80–200 within
+a minute while signal quality still reads 0/Good. **Cause was a weak AAA in the
+headset**; a fresh one gave a steady 513/s. Check the battery FIRST.
+- The phone app now shows "Samples/sec from headset" and "Samples/sec sent to
+  Mac". If "from headset" is low, the problem is headset → phone (battery,
+  Bluetooth). If only "sent" is low, it's Wi-Fi. Also check the phone is on
+  the home Wi-Fi (not cellular/hotspot) and the Mac IP in the app is current.
+- App changes made while chasing this (built + installed from the command line
+  with xcodebuild/devicectl; the phone is paired, so Xcode needn't be opened):
+  SDK file logging (`enableLogging`, Documents/TG_log) turned off; raw samples
+  sent in batches of 16 (`{"rawBatch":[...]}`), unpacked by bridge-iphone.js
+  into single `{"rawEeg":N}` for browsers; stale sockets cancelled on reconnect.
+  SDK console logging left ON: with it off the headset was found but never
+  connected (not proven to be the cause, but don't turn it off again casually).
+- This headset's LED is solid blue normally; it doesn't blink when searching.
+
 ## Legacy / abandoned files — do not resume work here without a reason
 - **`bridge.js`** — the old Mac-side bridge: polls ThinkGear Connector (TGC) over TCP
   on port 13854, re-broadcasts to the browser on 8765 (same output port the iPhone

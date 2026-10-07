@@ -28,6 +28,8 @@ class BLEManager: NSObject, ObservableObject, MWMDelegate {
     @Published var status = "Starting…"
     @Published var eegData = EEGData()
     @Published var log: [String] = []
+    /// Raw samples per second arriving from the headset (updated every second).
+    @Published var headsetRate = 0
 
     /// Fired once per raw EEG sample (~512/s).
     var onRawSample: ((Int16) -> Void)?
@@ -38,11 +40,19 @@ class BLEManager: NSObject, ObservableObject, MWMDelegate {
 
     private let device = MWMDevice.sharedInstance()
     private var foundDeviceIDs: [String] = []
+    private let countLock = NSLock()
+    private var sampleCount = 0
+    private var rateTimer: Timer?
 
     override init() {
         super.init()
         device?.delegate = self
         device?.enableConsoleLog(true)
+        rateTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.countLock.lock(); let n = self.sampleCount; self.sampleCount = 0; self.countLock.unlock()
+            self.headsetRate = n
+        }
         status = "Scanning for MindWave…"
         device?.scanDevice()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -72,7 +82,9 @@ class BLEManager: NSObject, ObservableObject, MWMDelegate {
     func didConnect() {
         addLog("Connected")
         status = "Live"
-        device?.enableLogging(withOptions: UInt32(LoggingOptions.processed.rawValue | LoggingOptions.raw.rawValue))
+        // SDK file logging (Documents/TG_log) is deliberately left off: writing a
+        // log line per sample made the stream sink from 512/s to ~30/s within a
+        // minute (2026-09-30). The Mac records everything anyway.
     }
 
     func didDisconnect() {
@@ -84,6 +96,7 @@ class BLEManager: NSObject, ObservableObject, MWMDelegate {
     // MARK: - MWMDelegate (optional)
 
     func eegSample(_ sample: Int32) {
+        countLock.lock(); sampleCount += 1; countLock.unlock()
         onRawSample?(Int16(clamping: sample))
     }
 

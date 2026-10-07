@@ -53,7 +53,7 @@
 <body>
 <main>
   <h1>EEG Recorder v2</h1>
-  <p class="sub">Records the headset's raw signal plus a condition timeline while playing your test track. Built for single-cycle (25&nbsp;ms) averaging analysis.</p>
+  <p class="sub">Records the headset's raw signal plus a condition timeline while playing your test track. Built for single-cycle (25&nbsp;ms) averaging analysis. <a href="analyze-v2.html" style="color:#3987e5">Analyze saved sessions →</a></p>
 
   <div class="section">
     <h2>1 · Headset</h2>
@@ -94,6 +94,7 @@
       <button id="btn-start" class="primary">Start session</button>
       <button id="btn-stop" class="danger" disabled>Stop</button>
       <button id="btn-reveal" disabled>Show files in Finder</button>
+      <button id="btn-analyze" disabled>Analyze this session</button>
     </div>
     <div class="row" style="margin-top:12px">
       <div class="stat"><div class="label">Elapsed</div><div class="value" id="st-elapsed">—</div></div>
@@ -469,8 +470,11 @@ events.csv     Timeline markers.
   audio_start      Track playback actually started (audio_time_s = position
                    in the track).
   dropout          No samples arrived for > ${GAP_MS} ms (e.g. Bluetooth hiccup).
-                   Samples missing during a dropout are NOT in recording.csv,
-                   so sample_index skips over that gap.
+                   Samples lost in a dropout are NOT in recording.csv, and
+                   sample_index does NOT skip - it just continues. To find how
+                   many were lost, compare the jump in t_received_ms across the
+                   gap with the sample rate (a stall where samples arrive late
+                   in a burst loses nothing).
   signal_quality   poor_signal value changed.
 
 session.json   Settings, block schedule (planned times within the audio
@@ -543,6 +547,9 @@ but the absolute alignment to the audio has an unknown offset (likely tens of ms
   let lastSessionName = null;
   $('btn-start').addEventListener('click', startSession);
   $('btn-stop').addEventListener('click', stopSession);
+  $('btn-analyze').addEventListener('click', () => {
+    if (lastSessionName) window.open('analyze-v2.html?session=' + encodeURIComponent(lastSessionName), '_blank');
+  });
   $('btn-reveal').addEventListener('click', () => {
     const name = session ? session.name : lastSessionName;
     if (name) fetch(`/api/v2/reveal?session=${encodeURIComponent(name)}`, { method: 'POST' });
@@ -558,6 +565,7 @@ but the absolute alignment to the audio has an unknown offset (likely tens of ms
     $('btn-start').disabled = active;
     $('btn-stop').disabled = !active;
     $('btn-reveal').disabled = !active && !lastSessionName;
+    $('btn-analyze').disabled = active || !lastSessionName;
     $('start-block').disabled = active || $('record-only').checked;
     $('record-only').disabled = active;
     $('audio-file').disabled = active;

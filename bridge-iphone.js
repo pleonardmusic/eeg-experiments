@@ -35,13 +35,25 @@ ingest.on('connection', (ws) => {
   console.log('[bridge] iPhone connected');
   ws.on('message', (msg) => {
     const text = msg.toString();
-    latestPacket = text;
-    for (const client of broadcast.clients) {
-      if (client.readyState === 1) client.send(text);
+    // Newer app builds batch raw samples ({"rawBatch":[...]}) to keep the
+    // phone's message rate down; browsers still get one {"rawEeg":N} each.
+    if (text.startsWith('{"rawBatch"')) {
+      let batch;
+      try { batch = JSON.parse(text).rawBatch; } catch (_) { return; }
+      for (const v of batch) sendAll(`{"rawEeg":${v}}`);
+      return;
     }
+    latestPacket = text;
+    sendAll(text);
   });
   ws.on('close', () => console.log('[bridge] iPhone disconnected'));
 });
+
+function sendAll(text) {
+  for (const client of broadcast.clients) {
+    if (client.readyState === 1) client.send(text);
+  }
+}
 
 broadcast.on('connection', (ws) => {
   console.log('[bridge] Browser connected');
